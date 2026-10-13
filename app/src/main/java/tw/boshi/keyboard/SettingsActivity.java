@@ -33,7 +33,7 @@ public class SettingsActivity extends Activity {
   p=getSharedPreferences("config",MODE_PRIVATE);store=new SecureKeyStore(this);provider=p.getInt("provider",0);
   LinearLayout root=new LinearLayout(this);root.setPadding(dp(20),dp(16),dp(20),dp(32));root.setOrientation(LinearLayout.VERTICAL);
   ScrollView sc=new ScrollView(this);sc.addView(root);setContentView(sc);
-  root.addView(text("Boshi 嘸蝦米鍵盤 v0.5.2",26));
+  root.addView(text("Boshi 嘸蝦米鍵盤 v0.6",26));
   root.addView(text("已內建開源嘸蝦米字碼表，不需要下載或匯入。\n資料來源：jdh8/ibus-boshiamy（GPL 開源資料）。",15));
   status=text("正在檢查內建字碼表…",17);status.setPadding(0,dp(12),0,dp(12));root.addView(status);
   new Thread(()->{
@@ -77,6 +77,7 @@ public class SettingsActivity extends Activity {
   Switch auto=new Switch(this);auto.setText("選字後自動 AI 聯想下一個詞");auto.setTextSize(16);auto.setPadding(0,dp(12),0,dp(4));auto.setChecked(p.getBoolean("auto_predict",true));root.addView(auto);
   auto.setOnCheckedChangeListener((x,on)->p.edit().putBoolean("auto_predict",on).apply());
   root.addView(text("每位使用者需自行輸入 API Key；金鑰以 Android Keystore 加密保存。開啟自動聯想時，每次選字後會把游標前最多 60 字送給 AI；按 AI ✨ 則送出目前的字碼內容。密碼欄位不會使用 AI。",14));
+  addLearningSection(root);
   Button source=button("開源字碼表來源與授權");root.addView(source);
   source.setOnClickListener(v->startActivity(new Intent(Intent.ACTION_VIEW,android.net.Uri.parse("https://github.com/jdh8/ibus-boshiamy"))));
 
@@ -141,6 +142,30 @@ public class SettingsActivity extends Activity {
   p.edit().putString("model_"+SecureKeyStore.PROVIDERS[provider-1],m.isEmpty()?DEFAULT_MODELS[provider]:m).apply();
   return true;
  }
+
+ /** 常用詞學習: the on-device SQLite store, how often it is analysed, its stats and a reset. */
+ private void addLearningSection(LinearLayout root){
+  root.addView(section("常用詞學習（SQLite，只存在這支手機）"));
+  Switch learn=new Switch(this);learn.setText("記錄我選的字詞，常用的排前面並自動接續");learn.setTextSize(16);learn.setChecked(p.getBoolean("learn",true));root.addView(learn);
+  learn.setOnCheckedChangeListener((x,on)->p.edit().putBoolean("learn",on).apply());
+  root.addView(text("自動分析間隔",15));
+  RadioGroup interval=new RadioGroup(this);interval.setOrientation(RadioGroup.HORIZONTAL);
+  String[] names={"每小時","每 6 小時","每天"};int current=p.getInt("analyze_hours",6);
+  for(int i=0;i<AnalysisJob.HOURS.length;i++){RadioButton r=radio(names[i],3000+i);interval.addView(r);if(AnalysisJob.HOURS[i]==current)r.setChecked(true);}
+  interval.setOnCheckedChangeListener((g,id)->{p.edit().putInt("analyze_hours",AnalysisJob.HOURS[id-3000]).apply();AnalysisJob.schedule(this);});
+  root.addView(interval);
+  TextView stats=text("讀取學習資料中…",14);root.addView(stats);
+  LinearLayout actions=new LinearLayout(this);
+  Button analyze=button("立即分析"),reset=button("清除學習資料");
+  actions.addView(analyze,new LinearLayout.LayoutParams(0,-2,1));actions.addView(reset,new LinearLayout.LayoutParams(0,-2,1));root.addView(actions);
+  root.addView(text("分析會淡化 30 天沒用的字詞、整理常一起出現的片語；不會上傳。密碼欄位與標示「不要學習」的欄位不記錄。",14));
+  try{AnalysisJob.schedule(this);}catch(Exception ignored){}
+  Runnable load=()->new Thread(()->{String t;try{t=UserDict.get(this).summary()+lastAnalyzed();}catch(Exception e){t="無法讀取學習資料："+e.getMessage();}String shown=t;runOnUiThread(()->stats.setText(shown));}).start();
+  load.run();
+  analyze.setOnClickListener(v->{analyze.setEnabled(false);new Thread(()->{String t;try{t=AnalysisJob.runNow(this)+lastAnalyzed();}catch(Exception e){t="分析失敗："+e.getMessage();}String shown=t;runOnUiThread(()->{analyze.setEnabled(true);stats.setText(shown);toast("分析完成");});}).start();});
+  reset.setOnClickListener(v->new android.app.AlertDialog.Builder(this).setTitle("清除所有學習資料？").setMessage("常用字詞順序與接續詞會回到預設。").setPositiveButton("清除",(d,w)->{UserDict.get(this).clear();stats.postDelayed(load,300);toast("已清除");}).setNegativeButton("取消",null).show());
+ }
+ private String lastAnalyzed(){long at=p.getLong("analyzed_at",0);return at==0?"\n尚未分析":"\n上次分析："+java.text.DateFormat.getDateTimeInstance(java.text.DateFormat.SHORT,java.text.DateFormat.SHORT).format(new java.util.Date(at));}
 
  private TextView text(String s,int size){TextView t=new TextView(this);t.setText(s);t.setTextSize(size);t.setPadding(0,dp(6),0,dp(6));return t;}
  private TextView section(String s){TextView t=text(s,18);t.setPadding(0,dp(20),0,dp(4));return t;}

@@ -16,7 +16,7 @@
 - Main original application source is available in this repository under MIT. The combined distributed application/dictionary package is subject to applicable GPL/copyleft conditions. See upstream licenses before redistributing modified builds.
 
 ## Limitations
-This is an experimental **native Android keyboard**, not a full port of Trime/Rime. Its bundled dictionary currently excludes codes that include punctuation or other non-letter symbols. It supports offline multi-character segmentation, not true Rime contextual prediction. On-device tests have not yet been performed. API keys are encrypted per provider with an Android Keystore AES-GCM key (same approach as yichincho/buylist). Text is sent to the cloud only when you press AI ✨; avoid sensitive text in AI mode.
+This is an experimental **native Android keyboard**, not a full port of Trime/Rime. Its bundled dictionary currently excludes codes that include punctuation or other non-letter symbols. It supports offline multi-character segmentation, not true Rime contextual prediction. On-device tests have not yet been performed. API keys are encrypted per provider with an Android Keystore AES-GCM key (same approach as yichincho/buylist). Text is sent to the cloud only when AI is configured; avoid sensitive text in AI mode. Learned words (picks, next-word pairs, phrases) are kept in an app-private SQLite database on the phone and re-analysed by a periodic JobScheduler job; they are never uploaded.
 
 ## Build
 GitHub Actions builds Android debug APK with Android SDK 35 and Java 17, validates the downloaded dictionary (more than 10,000 entries), then releases a directly downloadable APK at:
