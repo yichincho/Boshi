@@ -30,12 +30,13 @@ public class SettingsActivity extends Activity{
        if(conn.getResponseCode()!=200)throw new IOException("HTTP "+conn.getResponseCode());
        if(conn.getContentLengthLong()>5_000_000)throw new IOException("下載檔過大");
        try(InputStream in=new java.io.BufferedInputStream(conn.getInputStream())){
+        runOnUiThread(()->status.setText("下載已連線，正在解析及匯入字碼…"));
         int imported=DictionaryImporter.importFile(this,in,"boshiamy.txt");
         int loaded=new CodeDecoder().load(this);
         runOnUiThread(()->status.setText("已匯入 "+imported+" 筆開源碼表；載入 "+loaded+" 筆"));
        }
       }finally{conn.disconnect();}
-     }catch(Exception e){runOnUiThread(()->status.setText("下載／匯入失敗："+e.getMessage()));}
+     }catch(Exception e){runOnUiThread(()->{status.setText("下載／匯入失敗："+e.getClass().getSimpleName()+"："+e.getMessage());Toast.makeText(this,"字碼匯入失敗，請查看畫面原因",Toast.LENGTH_LONG).show();});}
      finally{runOnUiThread(()->btn.setEnabled(true));}
     }).start();
    }).show();
