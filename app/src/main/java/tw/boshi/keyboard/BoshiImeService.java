@@ -14,7 +14,7 @@ import java.util.*;
 public class BoshiImeService extends InputMethodService {
  private static final String[] LETTERS={"qwertyuiop","asdfghjkl","zxcvbnm"};
  private static final String[] SYMBOLS={"1234567890","@#$%&-+()/","*\"':;!?"};
- private LinearLayout root,bar,keys;private TextView preedit;private final StringBuilder buffer=new StringBuilder();private CodeDecoder decoder;private List<String> candidates=new ArrayList<>();private int epoch=0;private boolean secure=false,symbols=false;
+ private LinearLayout root,bar,keys;private TextView preedit;private final StringBuilder buffer=new StringBuilder();private CodeDecoder decoder;private List<String> candidates=new ArrayList<>();private int epoch=0;private boolean secure=false,symbols=false,english=false,shift=false;
  private final Handler handler=new Handler(android.os.Looper.getMainLooper());private Runnable repeat;
  private final Runnable predictTask=this::predict;private final Map<String,List<String>> predictCache=new LinkedHashMap<String,List<String>>(){protected boolean removeEldestEntry(Map.Entry<String,List<String>> e){return size()>30;}};
  private int keyBg,keyFn,keyPressed,keyText,barText,accent;private int keyHeight;
@@ -52,16 +52,22 @@ public class BoshiImeService extends InputMethodService {
   for(int r=0;r<3;r++){
    LinearLayout line=row();
    if(r==1&&!symbols)spacer(line,0.5f);
-   if(r==2)addKey(line,symbols?"，":"AI ✨",symbols?()->symbol("，"):this::ai,1.5f,true);
-   for(char ch:rows[r].toCharArray()){String s=String.valueOf(ch);if(symbols)addKey(line,s,()->symbol(s),1,false);else addKey(line,s.toUpperCase(Locale.ROOT),()->type(ch),1,false);}
+   if(r==2){
+    if(symbols)addKey(line,english?",":"，",()->symbol(english?",":"，"),1.5f,true);
+    else if(english){TextView sh=addKey(line,"⇧",()->{shift=!shift;buildKeys();},1.5f,true);if(shift)sh.setTextColor(accent);}
+    else addKey(line,"AI ✨",this::ai,1.5f,true);
+   }
+   for(char ch:rows[r].toCharArray()){String s=String.valueOf(ch);if(symbols)addKey(line,s,()->symbol(s),1,false);else{String shown=english&&!shift?s:s.toUpperCase(Locale.ROOT);addKey(line,shown,()->type(ch),1,false);}}
    if(r==1&&!symbols)spacer(line,0.5f);
    if(r==2){TextView del=addKey(line,"⌫",this::back,1.5f,true);repeatOnHold(del);}
   }
   LinearLayout bottom=row();
-  addKey(bottom,symbols?"ABC":"?123",()->{symbols=!symbols;buildKeys();},1.5f,true);
-  addKey(bottom,symbols?"、":"，",()->symbol(symbols?"、":"，"),1,true);
-  addKey(bottom,"嘸蝦米",this::space,4.5f,false);
-  addKey(bottom,"。",()->symbol("。"),1,true);
+  TextView lang=addKey(bottom,english?"英":"中",this::toggleLanguage,1.2f,true);lang.setTextColor(accent);lang.setTypeface(null,Typeface.BOLD);
+  addKey(bottom,symbols?"ABC":"?123",()->{symbols=!symbols;buildKeys();},1.3f,true);
+  String comma=english?",":(symbols?"、":"，"),period=english?".":"。";
+  addKey(bottom,comma,()->symbol(comma),1,true);
+  addKey(bottom,english?"English":"嘸蝦米",this::space,3.5f,false);
+  addKey(bottom,period,()->symbol(period),1,true);
   TextView enter=addKey(bottom,"↵",this::enter,1.5f,true);enter.setTextColor(0xffffffff);enter.setBackground(keyDrawable(accent,keyPressed));
  }
 
@@ -86,7 +92,15 @@ public class BoshiImeService extends InputMethodService {
  }
 
  @Override public void onStartInput(EditorInfo info,boolean restarting){super.onStartInput(info,restarting);int variation=info.inputType&android.text.InputType.TYPE_MASK_VARIATION;secure=variation==android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD||variation==android.text.InputType.TYPE_TEXT_VARIATION_WEB_PASSWORD||variation==android.text.InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD||variation==android.text.InputType.TYPE_NUMBER_VARIATION_PASSWORD;int cls=info.inputType&android.text.InputType.TYPE_MASK_CLASS;if(cls==android.text.InputType.TYPE_CLASS_NUMBER||cls==android.text.InputType.TYPE_CLASS_PHONE)secure=true;handler.removeCallbacks(predictTask);buffer.setLength(0);epoch++;refresh();}
- private void type(char c){if(buffer.length()<48)buffer.append(c);refresh();}
+ private void type(char c){
+  if(english){InputConnection ic=getCurrentInputConnection();if(ic!=null)ic.commitText(String.valueOf(shift?Character.toUpperCase(c):c),1);if(shift){shift=false;buildKeys();}return;}
+  if(buffer.length()<48)buffer.append(c);refresh();}
+
+ /** 中/英 key: English types letters straight into the field; pending Boshiamy codes are committed first. */
+ private void toggleLanguage(){
+  if(buffer.length()>0)space();
+  handler.removeCallbacks(predictTask);english=!english;shift=false;symbols=false;buildKeys();refresh();
+ }
  private void back(){if(buffer.length()>0){buffer.deleteCharAt(buffer.length()-1);refresh();}else if(getCurrentInputConnection()!=null)getCurrentInputConnection().deleteSurroundingText(1,0);}
  private void commit(String s){InputConnection ic=getCurrentInputConnection();if(ic!=null)ic.commitText(s,1);buffer.setLength(0);epoch++;refresh();if(!s.trim().isEmpty())schedulePredict();}
 
@@ -112,8 +126,9 @@ public class BoshiImeService extends InputMethodService {
   }).start();
  }
  private void showPredictions(List<String> list){bar.removeAllViews();if(list.isEmpty()){bar.addView(label("沒有聯想候選"),new LinearLayout.LayoutParams(-2,-1));return;}for(int i=0;i<list.size();i++)candidate(list.get(i),i==0);}
- private void symbol(String s){if(buffer.length()>0)commit((candidates.isEmpty()?buffer.toString():candidates.get(0))+s);else commit(s);}
- private void space(){if(buffer.length()>0)commit(candidates.isEmpty()?buffer.toString():candidates.get(0));else commit(" ");}
+ private void symbol(String s){if(english){commitPlain(s);return;}if(buffer.length()>0)commit((candidates.isEmpty()?buffer.toString():candidates.get(0))+s);else commit(s);}
+ private void commitPlain(String s){InputConnection ic=getCurrentInputConnection();if(ic!=null)ic.commitText(s,1);}
+ private void space(){if(english){commitPlain(" ");return;}if(buffer.length()>0)commit(candidates.isEmpty()?buffer.toString():candidates.get(0));else commit(" ");}
  private void enter(){if(buffer.length()>0)space();InputConnection ic=getCurrentInputConnection();if(ic!=null){ic.sendKeyEvent(new KeyEvent(KeyEvent.ACTION_DOWN,KeyEvent.KEYCODE_ENTER));ic.sendKeyEvent(new KeyEvent(KeyEvent.ACTION_UP,KeyEvent.KEYCODE_ENTER));}}
 
  private void candidate(String word,boolean first){
@@ -121,7 +136,7 @@ public class BoshiImeService extends InputMethodService {
   t.setBackground(keyDrawable(0x00000000,keyPressed));t.setPadding(dp(14),0,dp(14),0);
   bar.addView(t,new LinearLayout.LayoutParams(-2,-1));t.setOnClickListener(v->commit(word));
  }
- private void refresh(){if(preedit==null||decoder==null)return;epoch++;String raw=buffer.toString();preedit.setText(raw);preedit.setVisibility(raw.isEmpty()?View.GONE:View.VISIBLE);candidates=decoder.decode(raw);bar.removeAllViews();if(raw.isEmpty()){bar.addView(label(aiConfig()==null?"輸入字碼開始打字 · 設定 AI Key 後選字會自動聯想":"輸入字碼開始打字"),new LinearLayout.LayoutParams(-2,-1));return;}
+ private void refresh(){if(preedit==null||decoder==null)return;epoch++;String raw=buffer.toString();preedit.setText(raw);preedit.setVisibility(raw.isEmpty()?View.GONE:View.VISIBLE);candidates=decoder.decode(raw);bar.removeAllViews();if(raw.isEmpty()){bar.addView(label(english?"英文模式 · 點左下角「英」切回嘸蝦米":aiConfig()==null?"輸入字碼開始打字 · 設定 AI Key 後選字會自動聯想":"輸入字碼開始打字"),new LinearLayout.LayoutParams(-2,-1));return;}
  if(candidates.isEmpty())bar.addView(label("未匹配字碼；空白鍵輸出英文"),new LinearLayout.LayoutParams(-2,-1));
  for(int i=0;i<candidates.size();i++)candidate(candidates.get(i),i==0);
  }
