@@ -6,15 +6,17 @@ public final class DictionaryImporter {
  private DictionaryImporter(){}
  public static int importFile(Context context, InputStream source, String name) throws IOException {
   boolean yaml=name.toLowerCase(Locale.ROOT).endsWith(".yaml")||name.toLowerCase(Locale.ROOT).endsWith(".yml");
+  boolean scim=name.equalsIgnoreCase("boshiamy.txt")||name.toLowerCase(Locale.ROOT).endsWith(".scim");
   File temp=new File(context.getFilesDir(),"codes-import.tmp");
   File dest=new File(context.getFilesDir(),"codes.tsv");
   LinkedHashSet<String> entries=new LinkedHashSet<>();
-  boolean body=!yaml; int count=0;
+  boolean body=!yaml&&!scim; int count=0;
   try(BufferedReader reader=new BufferedReader(new InputStreamReader(source,"UTF-8"))){
    String line;
    while((line=reader.readLine())!=null){
     line=line.replace("\uFEFF","");
     if(yaml&&!body){if(line.trim().equals("..."))body=true;continue;}
+    if(scim){if(line.trim().equals("BEGIN_TABLE")){body=true;continue;}if(line.trim().equals("END_TABLE"))break;if(!body)continue;}
     if(line.startsWith("#")||line.trim().isEmpty())continue;
     String[] parts=line.split("\t");if(parts.length<2)continue;
     String code=yaml?parts[1].trim():parts[0].trim();
