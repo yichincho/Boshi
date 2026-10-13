@@ -1,25 +1,39 @@
 package tw.boshi.keyboard;
 import android.app.Activity;
+import android.content.ClipboardManager;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.os.Bundle;
 import android.text.InputType;
-import android.view.View;
 import android.widget.*;
-import java.io.IOException;
+import java.util.List;
 
 public class SettingsActivity extends Activity {
- private EditText key, model;
- private Spinner provider;
- private TextView status;
+ static final String[] PROVIDER_NAMES={"停用 AI","Gemini","NVIDIA"};
+ static final String[] DEFAULT_MODELS={"","gemini-3.1-flash-lite","meta/llama-3.3-70b-instruct"};
+ static final int[] KEY_HEIGHTS={48,56,64};
+ private EditText key,model;
+ private TextView status,keyHint;
+ private SharedPreferences p;
+ private SecureKeyStore store;
+ private int provider;
+
+ /** Model ID for a provider, falling back to v0.4's single "model" field and then the default. */
+ static String model(SharedPreferences p,int provider){
+  if(provider<1)return "";
+  String legacy=p.getInt("provider",0)==provider?p.getString("model",""):"";
+  String m=p.getString("model_"+SecureKeyStore.PROVIDERS[provider-1],legacy);
+  return m.isEmpty()?DEFAULT_MODELS[provider]:m;
+ }
+
  @Override public void onCreate(Bundle b) {
   super.onCreate(b);
-  LinearLayout root=new LinearLayout(this);root.setPadding(24,32,24,24);root.setOrientation(LinearLayout.VERTICAL);
+  p=getSharedPreferences("config",MODE_PRIVATE);store=new SecureKeyStore(this);provider=p.getInt("provider",0);
+  LinearLayout root=new LinearLayout(this);root.setPadding(dp(20),dp(16),dp(20),dp(32));root.setOrientation(LinearLayout.VERTICAL);
   ScrollView sc=new ScrollView(this);sc.addView(root);setContentView(sc);
-  TextView title=new TextView(this);title.setText("Boshi 嘸蝦米鍵盤 v0.4");title.setTextSize(23);root.addView(title);
-  TextView intro=new TextView(this);intro.setText("已內建開源嘸蝦米字碼表，不需要下載、TSV 或 YAML 匯入。\n資料來源：jdh8/ibus-boshiamy（GPL 開源資料）。");root.addView(intro);
-  status=new TextView(this);status.setTextSize(18);status.setPadding(0,20,0,20);root.addView(status);
-  status.setText("正在檢查內建字碼表…");
+  root.addView(text("Boshi 嘸蝦米鍵盤 v0.5",26));
+  root.addView(text("已內建開源嘸蝦米字碼表，不需要下載或匯入。\n資料來源：jdh8/ibus-boshiamy（GPL 開源資料）。",15));
+  status=text("正在檢查內建字碼表…",17);status.setPadding(0,dp(12),0,dp(12));root.addView(status);
   new Thread(()->{
    try {
     int loaded=new CodeDecoder().load(this);
@@ -28,21 +42,82 @@ public class SettingsActivity extends Activity {
     runOnUiThread(()->status.setText("❌ 內建字碼表讀取失敗："+e.getClass().getSimpleName()));
    }
   }).start();
-  Button enable=new Button(this);enable.setText("1. 啟用 Boshi 系統輸入法");root.addView(enable);
+  Button enable=button("1. 啟用 Boshi 系統輸入法");root.addView(enable);
   enable.setOnClickListener(v->startActivity(new Intent("android.settings.INPUT_METHOD_SETTINGS")));
-  Button choose=new Button(this);choose.setText("2. 切換使用 Boshi 鍵盤");root.addView(choose);
+  Button choose=button("2. 切換使用 Boshi 鍵盤");root.addView(choose);
   choose.setOnClickListener(v->{
    android.view.inputmethod.InputMethodManager imm=(android.view.inputmethod.InputMethodManager)getSystemService(INPUT_METHOD_SERVICE);
    if(imm!=null)imm.showInputMethodPicker();
   });
-  TextView sub=new TextView(this);sub.setText("選用：AI 整句候選（不設定也能離線輸入）");sub.setTextSize(18);root.addView(sub);
-  provider=new Spinner(this);provider.setAdapter(new ArrayAdapter<String>(this,android.R.layout.simple_spinner_dropdown_item,new String[]{"停用 AI","Gemini","NVIDIA"}));root.addView(provider);
-  key=new EditText(this);key.setHint("個人 API Key");key.setInputType(InputType.TYPE_CLASS_TEXT|InputType.TYPE_TEXT_VARIATION_PASSWORD);root.addView(key);
-  model=new EditText(this);model.setHint("模型 ID");root.addView(model);
-  SharedPreferences p=getSharedPreferences("config",MODE_PRIVATE);provider.setSelection(p.getInt("provider",0));key.setText(p.getString("key",""));model.setText(p.getString("model","gemini-2.5-flash"));
-  Button save=new Button(this);save.setText("儲存 AI 設定");root.addView(save);
-  save.setOnClickListener(v->{p.edit().putInt("provider",provider.getSelectedItemPosition()).putString("key",key.getText().toString().trim()).putString("model",model.getText().toString().trim()).apply();Toast.makeText(this,"設定已儲存（測試版 Key 尚未加密）",Toast.LENGTH_LONG).show();});
-  Button source=new Button(this);source.setText("開源字碼表來源與授權");root.addView(source);
+
+  root.addView(section("鍵盤高度"));
+  RadioGroup height=new RadioGroup(this);height.setOrientation(RadioGroup.HORIZONTAL);
+  String[] heightNames={"標準","大","特大"};int currentHeight=p.getInt("key_height",KEY_HEIGHTS[1]);
+  for(int i=0;i<KEY_HEIGHTS.length;i++){RadioButton r=radio(heightNames[i],1000+i);height.addView(r);if(KEY_HEIGHTS[i]==currentHeight)r.setChecked(true);}
+  height.setOnCheckedChangeListener((g,id)->p.edit().putInt("key_height",KEY_HEIGHTS[id-1000]).apply());
+  root.addView(height);
+
+  root.addView(section("選用：AI 整句候選（不設定也能離線輸入）"));
+  RadioGroup providers=new RadioGroup(this);providers.setOrientation(RadioGroup.HORIZONTAL);
+  for(int i=0;i<PROVIDER_NAMES.length;i++)providers.addView(radio(PROVIDER_NAMES[i],2000+i));
+  ((RadioButton)providers.getChildAt(provider)).setChecked(true);
+  root.addView(providers);
+  keyHint=text("",14);root.addView(keyHint);
+  key=new EditText(this);key.setSingleLine(true);key.setInputType(InputType.TYPE_CLASS_TEXT|InputType.TYPE_TEXT_VARIATION_PASSWORD);root.addView(key);
+  model=new EditText(this);model.setSingleLine(true);model.setHint("模型 ID");root.addView(model);
+  LinearLayout actions=new LinearLayout(this);
+  Button paste=button("貼上"),save=button("儲存"),clear=button("清除金鑰");
+  for(Button x:new Button[]{paste,save,clear})actions.addView(x,new LinearLayout.LayoutParams(0,-2,1));
+  root.addView(actions);
+  Button test=button("測試連線");root.addView(test);
+  root.addView(text("每位使用者需自行輸入 API Key；金鑰以 Android Keystore 加密保存，只在按下鍵盤上的 AI ✨ 時才會送出目前的文字。密碼欄位不會使用 AI。",14));
+  Button source=button("開源字碼表來源與授權");root.addView(source);
   source.setOnClickListener(v->startActivity(new Intent(Intent.ACTION_VIEW,android.net.Uri.parse("https://github.com/jdh8/ibus-boshiamy"))));
+
+  showProvider();
+  providers.setOnCheckedChangeListener((g,id)->{provider=id-2000;p.edit().putInt("provider",provider).apply();showProvider();});
+  paste.setOnClickListener(v->{
+   ClipboardManager cm=(ClipboardManager)getSystemService(CLIPBOARD_SERVICE);
+   if(cm!=null&&cm.hasPrimaryClip())key.setText(cm.getPrimaryClip().getItemAt(0).coerceToText(this).toString().trim());else toast("剪貼簿沒有文字");
+  });
+  save.setOnClickListener(v->{if(saveSettings())toast("API Key 已加密儲存");});
+  clear.setOnClickListener(v->{if(provider<1)return;store.clear(SecureKeyStore.PROVIDERS[provider-1]);key.setText("");toast(PROVIDER_NAMES[provider]+" API Key 已清除");});
+  test.setOnClickListener(v->{
+   if(!saveSettings())return;
+   int target=provider;String k=store.get(SecureKeyStore.PROVIDERS[target-1]),m=model(p,target);
+   test.setEnabled(false);
+   new Thread(()->{
+    String msg;
+    try{List<String> r=AiClient.query(target,k,m,"今天天氣很好");msg=r.isEmpty()?"已連線，但沒有取得候選":"✅ 連線成功："+r.get(0);}
+    catch(Exception e){msg="❌ 連線失敗："+e.getMessage();}
+    String shown=msg;runOnUiThread(()->{test.setEnabled(true);toast(shown);});
+   }).start();
+  });
  }
+
+ private void showProvider(){
+  boolean on=provider>0;
+  for(android.view.View v:new android.view.View[]{key,model})v.setEnabled(on);
+  if(!on){keyHint.setText("AI 已停用，鍵盤只使用離線字碼表。");key.setText("");key.setHint("");model.setText("");return;}
+  keyHint.setText(provider==1?"到 Google AI Studio（aistudio.google.com）建立 Gemini API Key 後貼上。":"到 build.nvidia.com 建立 NVIDIA API Key 後貼上。");
+  key.setHint(provider==1?"貼上 Gemini API Key":"貼上 NVIDIA API Key");
+  key.setText(store.get(SecureKeyStore.PROVIDERS[provider-1]));
+  model.setText(model(p,provider));
+ }
+
+ private boolean saveSettings(){
+  if(provider<1){toast("請先選擇 AI 服務");return false;}
+  String k=key.getText().toString().trim(),m=model.getText().toString().trim();
+  if(k.isEmpty()){toast("請輸入 API Key");return false;}
+  try{store.save(SecureKeyStore.PROVIDERS[provider-1],k);}catch(Exception e){toast("無法儲存，請重新嘗試");return false;}
+  p.edit().putString("model_"+SecureKeyStore.PROVIDERS[provider-1],m.isEmpty()?DEFAULT_MODELS[provider]:m).apply();
+  return true;
+ }
+
+ private TextView text(String s,int size){TextView t=new TextView(this);t.setText(s);t.setTextSize(size);t.setPadding(0,dp(6),0,dp(6));return t;}
+ private TextView section(String s){TextView t=text(s,18);t.setPadding(0,dp(20),0,dp(4));return t;}
+ private Button button(String s){Button x=new Button(this);x.setText(s);x.setAllCaps(false);x.setMinHeight(dp(48));return x;}
+ private RadioButton radio(String s,int id){RadioButton r=new RadioButton(this);r.setText(s);r.setId(id);r.setTextSize(16);r.setPadding(0,0,dp(12),0);return r;}
+ private int dp(int v){return (int)(v*getResources().getDisplayMetrics().density+.5f);}
+ private void toast(String s){Toast.makeText(this,s,Toast.LENGTH_LONG).show();}
 }
