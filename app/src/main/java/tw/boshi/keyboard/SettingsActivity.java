@@ -4,11 +4,11 @@ public class SettingsActivity extends Activity{
  private EditText key,model;private Spinner provider;private TextView status;private static final int PICK=23;
  @Override public void onCreate(Bundle b){super.onCreate(b);LinearLayout root=new LinearLayout(this);root.setOrientation(1);root.setPadding(24,24,24,24);ScrollView scroll=new ScrollView(this);scroll.addView(root);setContentView(scroll);
  TextView title=new TextView(this);title.setText("Boshi AI Keyboard · 測試版");title.setTextSize(23);root.addView(title);
- TextView info=new TextView(this);info.setText("可匯入 Rime .dict.yaml（字 TAB 字碼）或 UTF-8 TSV（字碼 TAB 字）。請自行確認碼表使用授權。\n本版為獨立實驗鍵盤，尚非完整 Trime / 嘸蝦米。");root.addView(info);
- Button online=new Button(this);online.setText("一鍵下載開源嘸蝦米字碼表（GPLv3+）");root.addView(online);online.setOnClickListener(v->downloadOpenTable(online));
+ TextView info=new TextView(this);info.setText("已內建開源嘸蝦米字碼表，離線即可使用，不需要下載或匯入。也可自行匯入 Rime YAML / TSV 覆蓋預設表。\n本版為獨立實驗鍵盤，尚非完整 Trime / 嘸蝦米。");root.addView(info);
+ 
  Button source=new Button(this);source.setText("查看開源字碼表來源與授權");root.addView(source);source.setOnClickListener(v->startActivity(new Intent(Intent.ACTION_VIEW,android.net.Uri.parse("https://github.com/jdh8/ibus-boshiamy"))));
  Button load=new Button(this);load.setText("匯入 Rime YAML / TSV 字碼表");root.addView(load);load.setOnClickListener(v->{Intent in=new Intent(Intent.ACTION_OPEN_DOCUMENT);in.setType("*/*");in.addCategory(Intent.CATEGORY_OPENABLE);startActivityForResult(in,PICK);});
- status=new TextView(this);root.addView(status);try{status.setText("已載入 "+new CodeDecoder().load(this)+" 筆字碼");}catch(Exception e){status.setText("字碼尚未匯入");}
+ status=new TextView(this);root.addView(status);try{status.setText("已載入 "+new CodeDecoder().load(this)+" 筆字碼（內建或自訂）");}catch(Exception e){status.setText("字碼尚未匯入");}
  provider=new Spinner(this);provider.setAdapter(new ArrayAdapter<String>(this,android.R.layout.simple_spinner_dropdown_item,new String[]{"停用 AI","Gemini","NVIDIA"}));root.addView(provider);
  key=new EditText(this);key.setHint("API Key（不會上傳到 GitHub）");root.addView(key);
  model=new EditText(this);model.setHint("模型名稱，例如 gemini-2.5-flash");root.addView(model);
