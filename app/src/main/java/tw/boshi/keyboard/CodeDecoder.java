@@ -4,16 +4,12 @@ import java.io.*;import java.util.*;
 public class CodeDecoder {
  private final Map<String,List<String>> dict=new HashMap<>(); private int longest=1;
  public synchronized int load(Context c)throws IOException{
-  dict.clear();longest=1; File f=new File(c.getFilesDir(),"codes.tsv");
-  InputStream source=f.exists()?new FileInputStream(f):c.getAssets().open("boshiamy.tsv");
+  dict.clear();longest=1; // The GPL-licensed table ships inside the APK: never rely on prior TSV imports.
+  InputStream source=c.getAssets().open("boshiamy.tsv");
   int n=0;try(BufferedReader rd=new BufferedReader(new InputStreamReader(source,"UTF-8"))){
    String s;while((s=rd.readLine())!=null){String[] a=s.split("\t",2);if(a.length!=2||!a[0].matches("[a-zA-Z]{1,8}")||a[1].trim().isEmpty())continue;
     String code=a[0].toLowerCase(Locale.ROOT);dict.computeIfAbsent(code,k->new ArrayList<>()).add(a[1].trim());longest=Math.max(longest,code.length());n++;
    }
-  }
-  if(n==0 && f.exists()){
-   // Recover from an invalid old manual import without requiring user action.
-   f.delete();return load(c);
   }
   return n;
  }
