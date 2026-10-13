@@ -6,6 +6,7 @@ import android.content.SharedPreferences;
 import android.os.Bundle;
 import android.text.InputType;
 import android.widget.*;
+import java.util.ArrayList;
 import java.util.List;
 
 public class SettingsActivity extends Activity {
@@ -13,6 +14,7 @@ public class SettingsActivity extends Activity {
  static final String[] DEFAULT_MODELS={"","gemini-3.1-flash-lite","meta/llama-3.3-70b-instruct"};
  static final int[] KEY_HEIGHTS={48,56,64};
  private EditText key,model;
+ private Button pick;
  private TextView status,keyHint;
  private SharedPreferences p;
  private SecureKeyStore store;
@@ -31,7 +33,7 @@ public class SettingsActivity extends Activity {
   p=getSharedPreferences("config",MODE_PRIVATE);store=new SecureKeyStore(this);provider=p.getInt("provider",0);
   LinearLayout root=new LinearLayout(this);root.setPadding(dp(20),dp(16),dp(20),dp(32));root.setOrientation(LinearLayout.VERTICAL);
   ScrollView sc=new ScrollView(this);sc.addView(root);setContentView(sc);
-  root.addView(text("Boshi 嘸蝦米鍵盤 v0.5",26));
+  root.addView(text("Boshi 嘸蝦米鍵盤 v0.5.1",26));
   root.addView(text("已內建開源嘸蝦米字碼表，不需要下載或匯入。\n資料來源：jdh8/ibus-boshiamy（GPL 開源資料）。",15));
   status=text("正在檢查內建字碼表…",17);status.setPadding(0,dp(12),0,dp(12));root.addView(status);
   new Thread(()->{
@@ -65,12 +67,16 @@ public class SettingsActivity extends Activity {
   keyHint=text("",14);root.addView(keyHint);
   key=new EditText(this);key.setSingleLine(true);key.setInputType(InputType.TYPE_CLASS_TEXT|InputType.TYPE_TEXT_VARIATION_PASSWORD);root.addView(key);
   model=new EditText(this);model.setSingleLine(true);model.setHint("模型 ID");root.addView(model);
+  pick=button("選擇模型（讀取目前可用清單）");root.addView(pick);
+  pick.setOnClickListener(v->pickModel());
   LinearLayout actions=new LinearLayout(this);
   Button paste=button("貼上"),save=button("儲存"),clear=button("清除金鑰");
   for(Button x:new Button[]{paste,save,clear})actions.addView(x,new LinearLayout.LayoutParams(0,-2,1));
   root.addView(actions);
   Button test=button("測試連線");root.addView(test);
-  root.addView(text("每位使用者需自行輸入 API Key；金鑰以 Android Keystore 加密保存，只在按下鍵盤上的 AI ✨ 時才會送出目前的文字。密碼欄位不會使用 AI。",14));
+  Switch auto=new Switch(this);auto.setText("選字後自動 AI 聯想下一個詞");auto.setTextSize(16);auto.setPadding(0,dp(12),0,dp(4));auto.setChecked(p.getBoolean("auto_predict",true));root.addView(auto);
+  auto.setOnCheckedChangeListener((x,on)->p.edit().putBoolean("auto_predict",on).apply());
+  root.addView(text("每位使用者需自行輸入 API Key；金鑰以 Android Keystore 加密保存。開啟自動聯想時，每次選字後會把游標前最多 60 字送給 AI；按 AI ✨ 則送出目前的字碼內容。密碼欄位不會使用 AI。",14));
   Button source=button("開源字碼表來源與授權");root.addView(source);
   source.setOnClickListener(v->startActivity(new Intent(Intent.ACTION_VIEW,android.net.Uri.parse("https://github.com/jdh8/ibus-boshiamy"))));
 
@@ -97,12 +103,34 @@ public class SettingsActivity extends Activity {
 
  private void showProvider(){
   boolean on=provider>0;
-  for(android.view.View v:new android.view.View[]{key,model})v.setEnabled(on);
+  for(android.view.View v:new android.view.View[]{key,model,pick})v.setEnabled(on);
   if(!on){keyHint.setText("AI 已停用，鍵盤只使用離線字碼表。");key.setText("");key.setHint("");model.setText("");return;}
-  keyHint.setText(provider==1?"到 Google AI Studio（aistudio.google.com）建立 Gemini API Key 後貼上。":"到 build.nvidia.com 建立 NVIDIA API Key 後貼上。");
+  keyHint.setText(provider==1?"到 Google AI Studio（aistudio.google.com）建立 Gemini API Key 後貼上。":"到 build.nvidia.com 建立 NVIDIA API Key（nvapi- 開頭）後貼上，再按「選擇模型」挑一個目前可用的模型。");
   key.setHint(provider==1?"貼上 Gemini API Key":"貼上 NVIDIA API Key");
   key.setText(store.get(SecureKeyStore.PROVIDERS[provider-1]));
   model.setText(model(p,provider));
+ }
+
+ /** Lists common models first (only those still offered when the live list loads), then every other chat model. */
+ private void pickModel(){
+  if(provider<1)return;
+  int target=provider;String k=key.getText().toString().trim();
+  pick.setEnabled(false);pick.setText("讀取模型清單中…");
+  new Thread(()->{
+   List<String> live=null;String error=null;
+   try{live=AiClient.listModels(target,k);}catch(Exception e){error=e.getMessage();}
+   List<String> items=new ArrayList<>();
+   for(String m:AiClient.COMMON_MODELS[target])if(live==null||live.contains(m))items.add(m);
+   int common=items.size();
+   if(live!=null)for(String m:live)if(!items.contains(m))items.add(m);
+   String title=error!=null?"無法讀取即時清單，先顯示常用模型\n"+error:"可用模型 "+items.size()+" 個（★ 為常用）";
+   runOnUiThread(()->{
+    pick.setEnabled(true);pick.setText("選擇模型（讀取目前可用清單）");
+    if(target!=provider)return;
+    String[] labels=new String[items.size()];for(int i=0;i<labels.length;i++)labels[i]=(i<common?"★ ":"")+items.get(i);
+    new android.app.AlertDialog.Builder(this).setTitle(title).setItems(labels,(d,i)->model.setText(items.get(i))).setNegativeButton("取消",null).show();
+   });
+  }).start();
  }
 
  private boolean saveSettings(){

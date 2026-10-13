@@ -16,6 +16,7 @@ public class BoshiImeService extends InputMethodService {
  private static final String[] SYMBOLS={"1234567890","@#$%&-+()/","*\"':;!?"};
  private LinearLayout root,bar,keys;private TextView preedit;private final StringBuilder buffer=new StringBuilder();private CodeDecoder decoder;private List<String> candidates=new ArrayList<>();private int epoch=0;private boolean secure=false,symbols=false;
  private final Handler handler=new Handler(android.os.Looper.getMainLooper());private Runnable repeat;
+ private final Runnable predictTask=this::predict;private final Map<String,List<String>> predictCache=new LinkedHashMap<String,List<String>>(){protected boolean removeEldestEntry(Map.Entry<String,List<String>> e){return size()>30;}};
  private int keyBg,keyFn,keyPressed,keyText,barText,accent;private int keyHeight;
 
  private int dp(float v){return (int)(v*getResources().getDisplayMetrics().density+.5f);}
@@ -84,10 +85,33 @@ public class BoshiImeService extends InputMethodService {
   del.setOnTouchListener((v,e)->{if((e.getAction()==MotionEvent.ACTION_UP||e.getAction()==MotionEvent.ACTION_CANCEL)&&repeat!=null){handler.removeCallbacks(repeat);repeat=null;}return false;});
  }
 
- @Override public void onStartInput(EditorInfo info,boolean restarting){super.onStartInput(info,restarting);int variation=info.inputType&android.text.InputType.TYPE_MASK_VARIATION;secure=variation==android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD||variation==android.text.InputType.TYPE_TEXT_VARIATION_WEB_PASSWORD||variation==android.text.InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD||variation==android.text.InputType.TYPE_NUMBER_VARIATION_PASSWORD;buffer.setLength(0);epoch++;refresh();}
+ @Override public void onStartInput(EditorInfo info,boolean restarting){super.onStartInput(info,restarting);int variation=info.inputType&android.text.InputType.TYPE_MASK_VARIATION;secure=variation==android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD||variation==android.text.InputType.TYPE_TEXT_VARIATION_WEB_PASSWORD||variation==android.text.InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD||variation==android.text.InputType.TYPE_NUMBER_VARIATION_PASSWORD;int cls=info.inputType&android.text.InputType.TYPE_MASK_CLASS;if(cls==android.text.InputType.TYPE_CLASS_NUMBER||cls==android.text.InputType.TYPE_CLASS_PHONE)secure=true;handler.removeCallbacks(predictTask);buffer.setLength(0);epoch++;refresh();}
  private void type(char c){if(buffer.length()<48)buffer.append(c);refresh();}
  private void back(){if(buffer.length()>0){buffer.deleteCharAt(buffer.length()-1);refresh();}else if(getCurrentInputConnection()!=null)getCurrentInputConnection().deleteSurroundingText(1,0);}
- private void commit(String s){InputConnection ic=getCurrentInputConnection();if(ic!=null)ic.commitText(s,1);buffer.setLength(0);epoch++;refresh();}
+ private void commit(String s){InputConnection ic=getCurrentInputConnection();if(ic!=null)ic.commitText(s,1);buffer.setLength(0);epoch++;refresh();if(!s.trim().isEmpty())schedulePredict();}
+
+ /** Settings needed to call the AI, or null when AI is off or has no key. */
+ private String[] aiConfig(){SharedPreferences p=getSharedPreferences("config",MODE_PRIVATE);int provider=p.getInt("provider",0);if(provider<1)return null;String key=new SecureKeyStore(this).get(SecureKeyStore.PROVIDERS[provider-1]);return key.isEmpty()?null:new String[]{String.valueOf(provider),key,SettingsActivity.model(p,provider)};}
+ private boolean autoPredict(){return !secure&&getSharedPreferences("config",MODE_PRIVATE).getBoolean("auto_predict",true);}
+
+ /** After a pick, wait briefly so quick typing does not send one request per character. */
+ private void schedulePredict(){handler.removeCallbacks(predictTask);if(autoPredict())handler.postDelayed(predictTask,400);}
+
+ /** Shows AI follow-up suggestions for the text before the cursor; tapping one inserts it and predicts again. */
+ private void predict(){
+  if(buffer.length()>0||!autoPredict()||bar==null)return;
+  String[] cfg=aiConfig();if(cfg==null)return;
+  InputConnection ic=getCurrentInputConnection();CharSequence cs=ic==null?null:ic.getTextBeforeCursor(60,0);
+  String before=cs==null?"":cs.toString().trim();if(before.isEmpty())return;
+  int requestEpoch=epoch;List<String> cached=predictCache.get(before);
+  if(cached!=null){showPredictions(cached);return;}
+  bar.removeAllViews();bar.addView(label("AI 聯想中…"),new LinearLayout.LayoutParams(-2,-1));
+  new Thread(()->{
+   try{List<String> list=AiClient.predict(Integer.parseInt(cfg[0]),cfg[1],cfg[2],before);handler.post(()->{predictCache.put(before,list);if(requestEpoch==epoch&&buffer.length()==0)showPredictions(list);});}
+   catch(Exception e){handler.post(()->{if(requestEpoch==epoch&&buffer.length()==0){bar.removeAllViews();bar.addView(label("AI 聯想失敗："+e.getMessage()),new LinearLayout.LayoutParams(-2,-1));}});}
+  }).start();
+ }
+ private void showPredictions(List<String> list){bar.removeAllViews();if(list.isEmpty()){bar.addView(label("沒有聯想候選"),new LinearLayout.LayoutParams(-2,-1));return;}for(int i=0;i<list.size();i++)candidate(list.get(i),i==0);}
  private void symbol(String s){if(buffer.length()>0)commit((candidates.isEmpty()?buffer.toString():candidates.get(0))+s);else commit(s);}
  private void space(){if(buffer.length()>0)commit(candidates.isEmpty()?buffer.toString():candidates.get(0));else commit(" ");}
  private void enter(){if(buffer.length()>0)space();InputConnection ic=getCurrentInputConnection();if(ic!=null){ic.sendKeyEvent(new KeyEvent(KeyEvent.ACTION_DOWN,KeyEvent.KEYCODE_ENTER));ic.sendKeyEvent(new KeyEvent(KeyEvent.ACTION_UP,KeyEvent.KEYCODE_ENTER));}}
@@ -97,13 +121,13 @@ public class BoshiImeService extends InputMethodService {
   t.setBackground(keyDrawable(0x00000000,keyPressed));t.setPadding(dp(14),0,dp(14),0);
   bar.addView(t,new LinearLayout.LayoutParams(-2,-1));t.setOnClickListener(v->commit(word));
  }
- private void refresh(){if(preedit==null||decoder==null)return;epoch++;String raw=buffer.toString();preedit.setText(raw);preedit.setVisibility(raw.isEmpty()?View.GONE:View.VISIBLE);candidates=decoder.decode(raw);bar.removeAllViews();if(raw.isEmpty()){bar.addView(label("Boshi 嘸蝦米 · 空白鍵送出第一候選"),new LinearLayout.LayoutParams(-2,-1));return;}
+ private void refresh(){if(preedit==null||decoder==null)return;epoch++;String raw=buffer.toString();preedit.setText(raw);preedit.setVisibility(raw.isEmpty()?View.GONE:View.VISIBLE);candidates=decoder.decode(raw);bar.removeAllViews();if(raw.isEmpty()){bar.addView(label(aiConfig()==null?"輸入字碼開始打字 · 設定 AI Key 後選字會自動聯想":"輸入字碼開始打字"),new LinearLayout.LayoutParams(-2,-1));return;}
  if(candidates.isEmpty())bar.addView(label("未匹配字碼；空白鍵輸出英文"),new LinearLayout.LayoutParams(-2,-1));
  for(int i=0;i<candidates.size();i++)candidate(candidates.get(i),i==0);
  }
- private void ai(){if(secure){Toast.makeText(this,"密碼欄位不使用 AI",Toast.LENGTH_SHORT).show();return;}if(buffer.length()==0)return;SharedPreferences p=getSharedPreferences("config",MODE_PRIVATE);int provider=p.getInt("provider",0);String key=provider<1?"":new SecureKeyStore(this).get(SecureKeyStore.PROVIDERS[provider-1]),model=SettingsActivity.model(p,provider);if(key.isEmpty()){Toast.makeText(this,"請先開啟 Boshi 設定並填寫 AI Key",Toast.LENGTH_SHORT).show();return;}
+ private void ai(){if(secure){Toast.makeText(this,"密碼欄位不使用 AI",Toast.LENGTH_SHORT).show();return;}if(buffer.length()==0)return;String[] cfg=aiConfig();if(cfg==null){Toast.makeText(this,"請先開啟 Boshi 設定並填寫 AI Key",Toast.LENGTH_SHORT).show();return;}
  String text=candidates.isEmpty()?buffer.toString():candidates.get(0);int requestEpoch=epoch;bar.removeAllViews();bar.addView(label("AI 生成中…"),new LinearLayout.LayoutParams(-2,-1));
- new Thread(()->{try{List<String> list=AiClient.query(provider,key,model,text);handler.post(()->{if(requestEpoch!=epoch||bar==null)return;bar.removeAllViews();for(int i=0;i<list.size();i++)candidate(list.get(i),i==0);if(list.isEmpty())bar.addView(label("無有效候選"),new LinearLayout.LayoutParams(-2,-1));});}
+ new Thread(()->{try{List<String> list=AiClient.query(Integer.parseInt(cfg[0]),cfg[1],cfg[2],text);handler.post(()->{if(requestEpoch!=epoch||bar==null)return;bar.removeAllViews();for(int i=0;i<list.size();i++)candidate(list.get(i),i==0);if(list.isEmpty())bar.addView(label("無有效候選"),new LinearLayout.LayoutParams(-2,-1));});}
  catch(Exception e){handler.post(()->{if(requestEpoch==epoch){refresh();Toast.makeText(this,"AI 失敗："+e.getMessage(),Toast.LENGTH_SHORT).show();}});}}).start();
  }
 }
