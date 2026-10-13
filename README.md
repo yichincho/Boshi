@@ -1,10 +1,10 @@
-# Boshi AI Keyboard (Android)
+# Boshi AI Keyboard (Android) · v0.2 preview
 
 An experimental **Android Input Method Editor** (IME) for continuous shape-code composition and optional AI sentence candidates. It is a standalone proof of concept, not a fork of Trime and **not yet a fully compatible Boshiamy implementation**.
 
 ## Features
 - Android keyboard with English code keys, candidate bar, backspace, space and enter.
-- Imports a UTF-8 **TAB-separated** mapping file via Android document picker: `code<TAB>word`. Multiple rows may share a code. Users must supply data they are licensed to use.
+- Imports a Rime **`.dict.yaml`** table using `word<TAB>code` directly, or a UTF-8 TSV table using `code<TAB>word`. The import converts to app-private `codes.tsv`. Codes containing punctuation or special Rime syntax are skipped by the current prototype. Users must supply dictionaries they are licensed to use.
 - Offline continuous decoding uses dictionary dynamic programming (beam search), producing up to five phrase candidates. Unknown codes stay uncommitted; no copyrighted dictionary shipped.
 - Optional Gemini and NVIDIA OpenAI-compatible API sentence rewriting, invoked **only when AI button is tapped**. No network access otherwise. API key stays in app-private preferences, but is **not hardware-backed encrypted** in this prototype. Do not use sensitive text with cloud mode.
 - No cloud calls in password fields. Does not transmit passwords or raw key events.
@@ -14,7 +14,7 @@ An experimental **Android Input Method Editor** (IME) for continuous shape-code 
 The workflow in `.github/workflows/android.yml` builds a **debug test APK** and publishes `Boshi-debug.apk` to GitHub Releases tagged `preview`. **This is a test build, not production signed.** Download from: https://github.com/yichincho/Boshi/releases/download/preview/Boshi-debug.apk (valid only after successful workflow).
 
 ## Install
-Install the APK, open **Boshi AI Keyboard** settings, import a licensed UTF-8 TSV code table, open Android Settings > System > Keyboard / Languages & input > On-screen keyboard, enable Boshi, and select it as current keyboard.
+Install the APK, open **Boshi AI Keyboard** settings, import a licensed Rime `.dict.yaml` or UTF-8 TSV code table, open Android Settings > System > Keyboard / Languages & input > On-screen keyboard, enable Boshi, and select it as current keyboard.
 
 ## Mapping TSV example (illustrative, not a Boshiamy table)
 ```tsv
@@ -27,7 +27,7 @@ Typing `abcd` yields `你好` and `妳好` when loaded. Each dictionary entry ma
 
 ## Architecture and limitations
 - `BoshiImeService.java`: Android IME, offline candidates, optional cloud action.
-- `CodeDecoder.java`: beam search with segment boundaries and weighted local rankings.
+- `CodeDecoder.java`: beam search with segment boundaries and weighted local rankings.\n- `DictionaryImporter.java`: imports and normalizes local Rime YAML or TSV.\n- `res/drawable/ic_boshi.xml`: shrimp-themed vector launcher icon.
 - `SettingsActivity.java`: config & SAF import.
 - `AiClient.java`: HTTPS clients with JSON parsing, timeouts and no key logging.
 
