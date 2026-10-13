@@ -34,3 +34,6 @@ Typing `abcd` yields `你好` and `妳好` when loaded. Each dictionary entry ma
 This v0.1 doesn't include actual Rime/Trime, official Boshiamy keyboard layouts, licensed word tables, learning dictionaries, punctuation customization or a mature preedit UI. The default keyboard requires a code table import before Chinese conversion can function. AI responses can be inaccurate; user selects a candidate before committing.
 
 License for original code in this repository: MIT. Third-party table licenses remain with their authors; nothing here grants redistribution permission for Boshiamy mapping data.
+
+## One-tap open-source Boshiamy dictionary (v0.2+)
+Open settings and tap **一鍵下載開源嘸蝦米字碼表（GPLv3+）**. After confirmation, the app fetches https://github.com/jdh8/ibus-boshiamy/blob/master/boshiamy.txt through HTTPS and converts the `BEGIN_TABLE` section (code, character, frequency) into the private TSV format used by the experimental decoder. You can still import your own TSV or Rime YAML. This does **not** bundle or redistribute the upstream dictionary. Its author states **GPLv3+**; preserve the license and attribution if redistributing the dictionary. Note: codes using punctuation are currently ignored by this prototype; full Boshiamy compatibility requires further keyboard support.
