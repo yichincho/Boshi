@@ -15,8 +15,9 @@ public class AiClient {
  }
 
  /** Suggests what the user will most likely type next after the text already in the field. */
- public static List<String> predict(int provider,String key,String model,String before)throws Exception {
-  return ask(provider,key,model,"你是繁體中文輸入法的聯想候選器。使用者已經輸入：「"+before+"」。預測接下來最可能輸入的 5 個接續內容，由短到長：先給 1～2 字的詞，再給較長的片語或把句子補完。只輸出要接在後面的新文字，不要重複已輸入的部分。僅輸出 JSON 字串陣列，不要解說。");
+ public static List<String> predict(int provider,String key,String model,String before,List<String> habits)throws Exception {
+  String style=habits.isEmpty()?"":"使用者平常常用的詞語與組合（符合上下文時優先採用這些用字習慣）："+String.join("、",habits)+"。";
+  return ask(provider,key,model,"你是繁體中文輸入法的聯想候選器。"+style+"使用者已經輸入：「"+before+"」。預測接下來最可能輸入的 5 個接續內容，由短到長：先給 1～2 字的詞，再給較長的片語或把句子補完。只輸出要接在後面的新文字，不要重複已輸入的部分。僅輸出 JSON 字串陣列，不要解說。");
  }
 
  private static List<String> ask(int provider,String key,String model,String instruction)throws Exception {

@@ -68,6 +68,25 @@ public final class UserDict extends SQLiteOpenHelper {
   return new ArrayList<>(out);
  }
 
+ /**
+  * A short sample of the user's own wording for the AI prompt: what usually follows {@code prev},
+  * then their most used multi-character words and pairs. At most 30 short items.
+  */
+ public List<String> habits(String prev){
+  LinkedHashSet<String> out=new LinkedHashSet<>();
+  try{
+   SQLiteDatabase db=getReadableDatabase();
+   if(prev!=null&&!prev.isEmpty()){
+    try(Cursor c=db.rawQuery("SELECT ?||next FROM bigrams WHERE prev=? ORDER BY count DESC LIMIT 8",new String[]{prev,prev})){while(c.moveToNext())out.add(c.getString(0));}
+    try(Cursor c=db.rawQuery("SELECT ?||tail FROM phrases WHERE head=? ORDER BY count DESC LIMIT 4",new String[]{prev,prev})){while(c.moveToNext())out.add(c.getString(0));}
+   }
+   try(Cursor c=db.rawQuery("SELECT word FROM picks WHERE length(word)>=2 GROUP BY word HAVING SUM(count)>=2 ORDER BY SUM(count) DESC LIMIT 12",null)){while(c.moveToNext())out.add(c.getString(0));}
+   try(Cursor c=db.rawQuery("SELECT prev||next FROM bigrams WHERE count>=2 ORDER BY count DESC LIMIT 10",null)){while(c.moveToNext())out.add(c.getString(0));}
+  }catch(Exception ignored){}
+  List<String> list=new ArrayList<>();for(String h:out)if(h.length()<=12&&list.size()<30)list.add(h);
+  return list;
+ }
+
  /** Periodic job: fade entries unused for 30 days, drop the faded-out ones and rebuild frequent phrases. */
  public synchronized String analyze(){
   long now=System.currentTimeMillis();SQLiteDatabase db=getWritableDatabase();db.beginTransaction();
