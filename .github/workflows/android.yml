@@ -42,17 +42,17 @@ jobs:
                   break
               if not inside or line.startswith('#'):
                   continue
-              fields = line.split('\\t')
+              fields = line.split('\t')
               if len(fields) < 2:
                   continue
               code, word = fields[0].strip(), fields[1].strip()
               if code.isascii() and code.isalpha() and 1 <= len(code) <= 8 and word:
-                  pair = code.lower()+'\\t'+word
+                  pair = code.lower()+'\t'+word
                   if pair not in seen:
                       lines.append(pair)
                       seen.add(pair)
           assert len(lines) > 10000, f'Unexpected dictionary size: {len(lines)}'
-          Path('app/src/main/assets/boshiamy.tsv').write_text('\\n'.join(lines)+'\\n', encoding='utf-8')
+          Path('app/src/main/assets/boshiamy.tsv').write_text('\n'.join(lines)+'\n', encoding='utf-8')
           print(f'Bundled {len(lines)} unique mappings')
           PY
       - name: Compile
