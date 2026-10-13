@@ -33,7 +33,7 @@ public class SettingsActivity extends Activity {
   p=getSharedPreferences("config",MODE_PRIVATE);store=new SecureKeyStore(this);provider=p.getInt("provider",0);
   LinearLayout root=new LinearLayout(this);root.setPadding(dp(20),dp(16),dp(20),dp(32));root.setOrientation(LinearLayout.VERTICAL);
   ScrollView sc=new ScrollView(this);sc.addView(root);setContentView(sc);
-  root.addView(text("Boshi 嘸蝦米鍵盤 v0.6",26));
+  root.addView(text("Boshi 嘸蝦米鍵盤 v0.6.1",26));
   root.addView(text("已內建開源嘸蝦米字碼表，不需要下載或匯入。\n資料來源：jdh8/ibus-boshiamy（GPL 開源資料）。",15));
   status=text("正在檢查內建字碼表…",17);status.setPadding(0,dp(12),0,dp(12));root.addView(status);
   new Thread(()->{
@@ -76,6 +76,8 @@ public class SettingsActivity extends Activity {
   Button test=button("測試連線");root.addView(test);
   Switch auto=new Switch(this);auto.setText("選字後自動 AI 聯想下一個詞");auto.setTextSize(16);auto.setPadding(0,dp(12),0,dp(4));auto.setChecked(p.getBoolean("auto_predict",true));root.addView(auto);
   auto.setOnCheckedChangeListener((x,on)->p.edit().putBoolean("auto_predict",on).apply());
+  Switch habits=new Switch(this);habits.setText("AI 聯想參考我的常用詞（最多 30 個常用詞會一起送給 AI）");habits.setTextSize(16);habits.setPadding(0,dp(8),0,dp(4));habits.setChecked(p.getBoolean("ai_habits",true));root.addView(habits);
+  habits.setOnCheckedChangeListener((x,on)->p.edit().putBoolean("ai_habits",on).apply());
   root.addView(text("每位使用者需自行輸入 API Key；金鑰以 Android Keystore 加密保存。開啟自動聯想時，每次選字後會把游標前最多 60 字送給 AI；按 AI ✨ 則送出目前的字碼內容。密碼欄位不會使用 AI。",14));
   addLearningSection(root);
   Button source=button("開源字碼表來源與授權");root.addView(source);

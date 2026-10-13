@@ -127,9 +127,10 @@ public class BoshiImeService extends InputMethodService {
   String before=cs==null?"":cs.toString().trim();if(before.isEmpty())return;
   int requestEpoch=epoch;List<String> local=localSuggestions(),cached=predictCache.get(before);
   if(cached!=null){showPredictions(merge(local,cached));return;}
+  List<String> habits=learnEnabled()&&getSharedPreferences("config",MODE_PRIVATE).getBoolean("ai_habits",true)?dict.habits(lastWord):new ArrayList<>();
   if(local.isEmpty())bar.removeAllViews();bar.addView(label("AI 聯想中…"),new LinearLayout.LayoutParams(-2,-1));
   new Thread(()->{
-   try{List<String> list=AiClient.predict(Integer.parseInt(cfg[0]),cfg[1],cfg[2],before);handler.post(()->{predictCache.put(before,list);if(requestEpoch==epoch&&buffer.length()==0)showPredictions(merge(local,list));});}
+   try{List<String> list=AiClient.predict(Integer.parseInt(cfg[0]),cfg[1],cfg[2],before,habits);handler.post(()->{predictCache.put(before,list);if(requestEpoch==epoch&&buffer.length()==0)showPredictions(merge(local,list));});}
    catch(Exception e){handler.post(()->{if(requestEpoch==epoch&&buffer.length()==0){showPredictions(local);bar.addView(label("AI 聯想失敗："+e.getMessage()),new LinearLayout.LayoutParams(-2,-1));}});}
   }).start();
  }
