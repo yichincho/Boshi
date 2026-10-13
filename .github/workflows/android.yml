@@ -21,6 +21,40 @@ jobs:
         run: |
           yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null || true
           "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-35" "build-tools;35.0.0"
+      - name: Bundle open-source Boshiamy dictionary
+        run: |
+          mkdir -p app/src/main/assets
+          curl --fail --location --retry 3 --connect-timeout 15 --max-time 120 \
+            https://raw.githubusercontent.com/jdh8/ibus-boshiamy/master/boshiamy.txt \
+            -o /tmp/boshiamy.txt
+          python3 - <<'PY'
+          from pathlib import Path
+          text = Path('/tmp/boshiamy.txt').read_text(encoding='utf-8-sig')
+          assert 'BEGIN_TABLE' in text and 'END_TABLE' in text, 'SCIM dictionary incomplete'
+          inside = False
+          lines = []
+          seen = set()
+          for line in text.splitlines():
+              if line.strip() == 'BEGIN_TABLE':
+                  inside = True
+                  continue
+              if line.strip() == 'END_TABLE':
+                  break
+              if not inside or line.startswith('#'):
+                  continue
+              fields = line.split('\\t')
+              if len(fields) < 2:
+                  continue
+              code, word = fields[0].strip(), fields[1].strip()
+              if code.isascii() and code.isalpha() and 1 <= len(code) <= 8 and word:
+                  pair = code.lower()+'\\t'+word
+                  if pair not in seen:
+                      lines.append(pair)
+                      seen.add(pair)
+          assert len(lines) > 10000, f'Unexpected dictionary size: {len(lines)}'
+          Path('app/src/main/assets/boshiamy.tsv').write_text('\\n'.join(lines)+'\\n', encoding='utf-8')
+          print(f'Bundled {len(lines)} unique mappings')
+          PY
       - name: Compile
         run: gradle --no-daemon assembleDebug
       - name: Upload single APK to release
