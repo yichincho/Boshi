@@ -33,7 +33,7 @@ public class SettingsActivity extends Activity {
   p=getSharedPreferences("config",MODE_PRIVATE);store=new SecureKeyStore(this);provider=p.getInt("provider",0);
   LinearLayout root=new LinearLayout(this);root.setPadding(dp(20),dp(16),dp(20),dp(32));root.setOrientation(LinearLayout.VERTICAL);
   ScrollView sc=new ScrollView(this);sc.addView(root);setContentView(sc);
-  root.addView(text("Boshi 嘸蝦米鍵盤 v0.5.1",26));
+  root.addView(text("Boshi 嘸蝦米鍵盤 v0.5.2",26));
   root.addView(text("已內建開源嘸蝦米字碼表，不需要下載或匯入。\n資料來源：jdh8/ibus-boshiamy（GPL 開源資料）。",15));
   status=text("正在檢查內建字碼表…",17);status.setPadding(0,dp(12),0,dp(12));root.addView(status);
   new Thread(()->{
