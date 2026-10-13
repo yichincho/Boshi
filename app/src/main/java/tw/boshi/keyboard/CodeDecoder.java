@@ -10,7 +10,12 @@ public class CodeDecoder {
    String s;while((s=rd.readLine())!=null){String[] a=s.split("\t",2);if(a.length!=2||!a[0].matches("[a-zA-Z]{1,8}")||a[1].trim().isEmpty())continue;
     String code=a[0].toLowerCase(Locale.ROOT);dict.computeIfAbsent(code,k->new ArrayList<>()).add(a[1].trim());longest=Math.max(longest,code.length());n++;
    }
-  }return n;
+  }
+  if(n==0 && f.exists()){
+   // Recover from an invalid old manual import without requiring user action.
+   f.delete();return load(c);
+  }
+  return n;
  }
  private static class State{String text;int score;State(String s,int p){text=s;score=p;}}
  public synchronized List<String> decode(String input){
