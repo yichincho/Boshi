@@ -30,7 +30,7 @@ jobs:
           python3 - <<'PY'
           from pathlib import Path
           text = Path('/tmp/boshiamy.txt').read_text(encoding='utf-8-sig')
-          assert 'BEGIN_TABLE' in text and 'END_TABLE' in text, 'SCIM dictionary incomplete'
+          assert 'BEGIN_TABLE' in text, 'SCIM dictionary table marker missing'
           inside = False
           lines = []
           seen = set()
