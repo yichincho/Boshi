@@ -74,7 +74,9 @@ public class SettingsActivity extends Activity {
   for(Button x:new Button[]{paste,save,clear})actions.addView(x,new LinearLayout.LayoutParams(0,-2,1));
   root.addView(actions);
   Button test=button("測試連線");root.addView(test);
-  root.addView(text("每位使用者需自行輸入 API Key；金鑰以 Android Keystore 加密保存，只在按下鍵盤上的 AI ✨ 時才會送出目前的文字。密碼欄位不會使用 AI。",14));
+  Switch auto=new Switch(this);auto.setText("選字後自動 AI 聯想下一個詞");auto.setTextSize(16);auto.setPadding(0,dp(12),0,dp(4));auto.setChecked(p.getBoolean("auto_predict",true));root.addView(auto);
+  auto.setOnCheckedChangeListener((x,on)->p.edit().putBoolean("auto_predict",on).apply());
+  root.addView(text("每位使用者需自行輸入 API Key；金鑰以 Android Keystore 加密保存。開啟自動聯想時，每次選字後會把游標前最多 60 字送給 AI；按 AI ✨ 則送出目前的字碼內容。密碼欄位不會使用 AI。",14));
   Button source=button("開源字碼表來源與授權");root.addView(source);
   source.setOnClickListener(v->startActivity(new Intent(Intent.ACTION_VIEW,android.net.Uri.parse("https://github.com/jdh8/ibus-boshiamy"))));
 

@@ -9,9 +9,18 @@ public class AiClient {
  };
  private static final String[] NOT_CHAT={"embed","rerank","retriev","guard","safety","reward","parse","clip","ocr","detector","-vl","vision","whisper","tts","asr","audio","pii","topic-control","content-safety","bge","nv-embed","deplot","kosmos","paligemma","fuyu","neva","vila","cosmos","flux","stable-diffusion","sdxl"};
 
+ /** Rewrites the composed text into three natural full sentences (the AI ✨ key). */
  public static List<String> query(int provider,String key,String model,String text)throws Exception {
+  return ask(provider,key,model,"你是繁體中文輸入法候選器。根據以下文字，給出三種自然、保留原意的繁體中文完整句子。僅輸出 JSON 字串陣列，不要解說。文字："+text);
+ }
+
+ /** Suggests what the user will most likely type next after the text already in the field. */
+ public static List<String> predict(int provider,String key,String model,String before)throws Exception {
+  return ask(provider,key,model,"你是繁體中文輸入法的聯想候選器。使用者已經輸入：「"+before+"」。預測接下來最可能輸入的 5 個接續內容，由短到長：先給 1～2 字的詞，再給較長的片語或把句子補完。只輸出要接在後面的新文字，不要重複已輸入的部分。僅輸出 JSON 字串陣列，不要解說。");
+ }
+
+ private static List<String> ask(int provider,String key,String model,String instruction)throws Exception {
   if(provider<1||key.isEmpty()||model.isEmpty())throw new IOException("AI 未設定");
-  String instruction="你是繁體中文輸入法候選器。根據以下文字，給出三種自然、保留原意的繁體中文完整句子。僅輸出 JSON 字串陣列，不要解說。文字："+text;
   URL url;JSONObject request=new JSONObject();
   if(provider==1){url=new URL("https://generativelanguage.googleapis.com/v1beta/models/"+URLEncoder.encode(model,"UTF-8")+":generateContent");request.put("contents",new JSONArray().put(new JSONObject().put("parts",new JSONArray().put(new JSONObject().put("text",instruction)))));}
   else {url=new URL("https://integrate.api.nvidia.com/v1/chat/completions");request.put("model",model);request.put("messages",new JSONArray().put(new JSONObject().put("role","user").put("content",instruction)));request.put("max_tokens",1024);}
