@@ -33,8 +33,11 @@ public class SettingsActivity extends Activity {
   p=getSharedPreferences("config",MODE_PRIVATE);store=new SecureKeyStore(this);provider=p.getInt("provider",0);
   LinearLayout root=new LinearLayout(this);root.setPadding(dp(20),dp(16),dp(20),dp(32));root.setOrientation(LinearLayout.VERTICAL);
   ScrollView sc=new ScrollView(this);sc.addView(root);setContentView(sc);
-  root.addView(text("Boshi 嘸蝦米鍵盤 v0.6.1",26));
+  root.addView(text("Boshi 嘸蝦米鍵盤 v"+BuildConfig.VERSION_NAME,26));
   root.addView(text("已內建開源嘸蝦米字碼表，不需要下載或匯入。\n資料來源：jdh8/ibus-boshiamy（GPL 開源資料）。",15));
+  root.addView(text("語音輸入：點鍵盤候選欄右側 🎤 開始，再點 ■ 停止。辨識為文字後填入目前輸入框，請自行確認再送出。手機語音服務可能使用網路；Boshi 不建立錄音檔。",15));
+  Button microphone=button("允許語音輸入使用麥克風");root.addView(microphone);
+  microphone.setOnClickListener(v->startActivity(new Intent(this,VoicePermissionActivity.class)));
   status=text("正在檢查內建字碼表…",17);status.setPadding(0,dp(12),0,dp(12));root.addView(status);
   new Thread(()->{
    try {

@@ -69,9 +69,13 @@ jobs:
       - name: Test input rules
         run: |
           mkdir -p /tmp/boshi-tests
-          javac -d /tmp/boshi-tests app/src/main/java/tw/boshi/keyboard/InputRules.java app/src/main/java/tw/boshi/keyboard/OfflineSuggestions.java tests/InputRulesTest.java tests/OfflineSuggestionsTest.java
+          javac -d /tmp/boshi-tests app/src/main/java/tw/boshi/keyboard/InputRules.java app/src/main/java/tw/boshi/keyboard/OfflineSuggestions.java tests/InputRulesTest.java tests/OfflineSuggestionsTest.java app/src/main/java/tw/boshi/keyboard/VoiceInputSession.java tests/VoiceInputSessionTest.java
           java -cp /tmp/boshi-tests tw.boshi.keyboard.InputRulesTest
           java -cp /tmp/boshi-tests tw.boshi.keyboard.OfflineSuggestionsTest app/src/main/assets/offline_phrases.txt
+          java -cp /tmp/boshi-tests tw.boshi.keyboard.VoiceInputSessionTest
+          mkdir -p /tmp/boshi-voice-tests
+          javac -d /tmp/boshi-voice-tests $(find tests/voice-stubs -name '*.java') app/src/main/java/tw/boshi/keyboard/VoiceInputSession.java app/src/main/java/tw/boshi/keyboard/VoiceInputController.java tests/VoiceInputControllerTest.java
+          java -cp /tmp/boshi-voice-tests tw.boshi.keyboard.VoiceInputControllerTest
           python3 -m unittest discover -s tests -p 'test_*.py' -v
       - name: Compile
         run: gradle --no-daemon assembleDebug
@@ -94,7 +98,8 @@ jobs:
             "" "Includes the offline Boshiamy dictionary, bundled Rime phrase continuations, and optional Gemini/NVIDIA AI assistance." \
             "Chinese S + period outputs ？; the period key outputs ASCII ." \
             "1–5 Chinese characters use local candidates; AI assistance starts at 6 characters." \
-            "v0.7.1 fixes missing offline next-word candidates on fresh installs, including after 有 and 我是有." \
+            "Includes offline next-word candidates on fresh installs, including after 有 and 我是有." \
+            "v0.8.0 adds the keyboard microphone button: speech becomes editable text, without an audio attachment or automatic sending." \
             "" "Build source: https://github.com/${GITHUB_REPOSITORY}/commit/${GITHUB_SHA}" \
             > /tmp/boshi-release-notes.txt
           cp app/build/outputs/apk/debug/app-debug.apk Boshi-debug.apk
