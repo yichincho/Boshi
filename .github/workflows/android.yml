@@ -68,10 +68,26 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          version=$(python3 - <<'PY'
+          import re
+          from pathlib import Path
+          match = re.search(r"versionName\s+'([^']+)'", Path('app/build.gradle').read_text())
+          if not match:
+              raise SystemExit('versionName missing from app/build.gradle')
+          print(match.group(1))
+          PY
+          )
+          title="Boshi v${version} preview"
+          printf '%s\n' "Boshi AI Keyboard v${version}" \
+            "" "Includes the offline Boshiamy dictionary and optional Gemini/NVIDIA AI assistance." \
+            "Chinese S + period outputs ？; the period key outputs ASCII ." \
+            "1–5 Chinese characters use local candidates; AI assistance starts at 6 characters." \
+            "" "Build source: https://github.com/${GITHUB_REPOSITORY}/commit/${GITHUB_SHA}" \
+            > /tmp/boshi-release-notes.txt
           cp app/build/outputs/apk/debug/app-debug.apk Boshi-debug.apk
           if gh release view preview >/dev/null 2>&1; then
             gh release upload preview Boshi-debug.apk --clobber
+            gh release edit preview --title "$title" --notes-file /tmp/boshi-release-notes.txt
           else
-            gh release create preview Boshi-debug.apk --prerelease --title "Boshi v0.1 preview" --notes "Experimental Android keyboard with TSV import, offline phrase candidates and opt-in Gemini/NVIDIA API. No bundled Boshiamy table."
+            gh release create preview Boshi-debug.apk --prerelease --title "$title" --notes-file /tmp/boshi-release-notes.txt
           fi
-
