@@ -38,6 +38,8 @@ public class SettingsActivity extends Activity {
   root.addView(text("語音輸入：點鍵盤候選欄右側 🎤 開始，再點 ■ 停止。辨識為文字後填入目前輸入框，請自行確認再送出。手機語音服務可能使用網路；Boshi 不建立錄音檔。",15));
   Button microphone=button("允許語音輸入使用麥克風");root.addView(microphone);
   microphone.setOnClickListener(v->startActivity(new Intent(this,VoicePermissionActivity.class)));
+  Button quick=button("常用字串／快捷片語管理");root.addView(quick);
+  quick.setOnClickListener(v->startActivity(new Intent(this,QuickPhraseActivity.class)));
   status=text("正在檢查內建字碼表…",17);status.setPadding(0,dp(12),0,dp(12));root.addView(status);
   new Thread(()->{
    try {

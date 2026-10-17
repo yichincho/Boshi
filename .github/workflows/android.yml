@@ -69,10 +69,11 @@ jobs:
       - name: Test input rules
         run: |
           mkdir -p /tmp/boshi-tests
-          javac -d /tmp/boshi-tests app/src/main/java/tw/boshi/keyboard/InputRules.java app/src/main/java/tw/boshi/keyboard/OfflineSuggestions.java tests/InputRulesTest.java tests/OfflineSuggestionsTest.java app/src/main/java/tw/boshi/keyboard/VoiceInputSession.java tests/VoiceInputSessionTest.java
+          javac -d /tmp/boshi-tests app/src/main/java/tw/boshi/keyboard/InputRules.java app/src/main/java/tw/boshi/keyboard/OfflineSuggestions.java tests/InputRulesTest.java tests/OfflineSuggestionsTest.java app/src/main/java/tw/boshi/keyboard/VoiceInputSession.java tests/VoiceInputSessionTest.java app/src/main/java/tw/boshi/keyboard/QuickPhraseBook.java tests/QuickPhraseBookTest.java
           java -cp /tmp/boshi-tests tw.boshi.keyboard.InputRulesTest
           java -cp /tmp/boshi-tests tw.boshi.keyboard.OfflineSuggestionsTest app/src/main/assets/offline_phrases.txt
           java -cp /tmp/boshi-tests tw.boshi.keyboard.VoiceInputSessionTest
+          java -cp /tmp/boshi-tests tw.boshi.keyboard.QuickPhraseBookTest
           mkdir -p /tmp/boshi-voice-tests
           javac -d /tmp/boshi-voice-tests $(find tests/voice-stubs -name '*.java') app/src/main/java/tw/boshi/keyboard/VoiceInputSession.java app/src/main/java/tw/boshi/keyboard/VoiceInputController.java tests/VoiceInputControllerTest.java
           java -cp /tmp/boshi-voice-tests tw.boshi.keyboard.VoiceInputControllerTest
@@ -99,7 +100,8 @@ jobs:
             "Chinese S + period outputs ？; the period key outputs ASCII ." \
             "1–5 Chinese characters use local candidates; AI assistance starts at 6 characters." \
             "Includes offline next-word candidates on fresh installs, including after 有 and 我是有." \
-            "v0.8.0 adds the keyboard microphone button: speech becomes editable text, without an audio attachment or automatic sending." \
+            "Includes a keyboard microphone button: speech becomes editable text, without an audio attachment or automatic sending." \
+            "v0.9.0 adds custom quick phrases: type a shortcut, tap its pinned name, and insert an entire paragraph with punctuation and newlines." \
             "" "Build source: https://github.com/${GITHUB_REPOSITORY}/commit/${GITHUB_SHA}" \
             > /tmp/boshi-release-notes.txt
           cp app/build/outputs/apk/debug/app-debug.apk Boshi-debug.apk
