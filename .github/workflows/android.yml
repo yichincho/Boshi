@@ -101,7 +101,7 @@ jobs:
             "1–5 Chinese characters use local candidates; AI assistance starts at 6 characters." \
             "Includes offline next-word candidates on fresh installs, including after 有 and 我是有." \
             "Includes a keyboard microphone button: speech becomes editable text, without an audio attachment or automatic sending." \
-            "v0.9.0 adds custom quick phrases: type a shortcut, tap its pinned name, and insert an entire paragraph with punctuation and newlines." \
+            "v0.9.1 fixes repeated shortcut codes: one code lists multiple independently editable phrases; existing dictionaries remain readable." \
             "" "Build source: https://github.com/${GITHUB_REPOSITORY}/commit/${GITHUB_SHA}" \
             > /tmp/boshi-release-notes.txt
           cp app/build/outputs/apk/debug/app-debug.apk Boshi-debug.apk

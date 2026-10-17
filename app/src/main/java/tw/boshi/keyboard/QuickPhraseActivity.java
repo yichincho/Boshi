@@ -27,7 +27,7 @@ public class QuickPhraseActivity extends Activity {
   root=new LinearLayout(this);root.setOrientation(LinearLayout.VERTICAL);root.setPadding(dp(20),dp(16),dp(20),dp(24));
   ScrollView scroll=new ScrollView(this);scroll.addView(root);setContentView(scroll);
   root.addView(text("常用字串／快捷片語",25));
-  root.addView(text("在中文鍵盤輸入快捷字碼，點選候選欄的 📌 名稱，即可插入完整內容。支援標點與換行，不使用 AI 改寫。空白鍵仍使用一般嘸蝦米候選。",15));
+  root.addView(text("在中文鍵盤輸入快捷字碼，點選候選欄的 📌 名稱，即可插入完整內容。同一字碼可儲存多筆內容，支援標點與換行，不使用 AI 改寫。空白鍵仍使用一般嘸蝦米候選。",15));
   Button add=button("＋ 新增常用字串");root.addView(add);add.setOnClickListener(v->edit(null));
   root.addView(text("已儲存 "+book.entries().size()+" 組",15));
   if(book.entries().isEmpty())root.addView(text("尚無常用字串。可新增地址、Email 或常用回覆。",17));
@@ -37,8 +37,8 @@ public class QuickPhraseActivity extends Activity {
    LinearLayout actions=new LinearLayout(this);Button edit=button("編輯"),delete=button("刪除");
    actions.addView(edit,new LinearLayout.LayoutParams(0,-2,1));actions.addView(delete,new LinearLayout.LayoutParams(0,-2,1));root.addView(actions);
    edit.setOnClickListener(v->edit(entry));
-   delete.setOnClickListener(v->new AlertDialog.Builder(this).setTitle("刪除「"+entry.name+"」？").setMessage("只刪除此組常用字串。").setNegativeButton("取消",null).setPositiveButton("刪除",(dialog,which)->{
-    QuickPhraseBook updated=QuickPhraseBook.decode(book.encode());updated.delete(entry.code);
+   delete.setOnClickListener(v->new AlertDialog.Builder(this).setTitle("刪除「"+entry.name+"」？").setMessage(entry.preview(80)+"\n\n只刪除這一筆，同字碼其他片語會保留。").setNegativeButton("取消",null).setPositiveButton("刪除",(dialog,which)->{
+    QuickPhraseBook updated=QuickPhraseBook.decode(book.encode());updated.delete(entry.id);
     try{store.save(updated);book=updated;render();}catch(IllegalStateException e){toast(e.getMessage());}
    }).show());
   }
@@ -60,7 +60,7 @@ public class QuickPhraseActivity extends Activity {
   dialog.setOnShowListener(ignored->dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v->{
    try{
     QuickPhraseBook updated=QuickPhraseBook.decode(book.encode());
-    updated.save(entry==null?null:entry.code,code.getText().toString(),name.getText().toString(),content.getText().toString());
+    updated.save(entry==null?null:entry.id,code.getText().toString(),name.getText().toString(),content.getText().toString());
     store.save(updated);book=updated;dialog.dismiss();render();toast("已儲存，回到輸入框即可使用");
    }catch(IllegalArgumentException|IllegalStateException e){toast(e.getMessage());}
   }));
