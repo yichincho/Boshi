@@ -23,3 +23,11 @@ GitHub Actions builds Android debug APK with Android SDK 35 and Java 17, validat
 https://github.com/yichincho/Boshi/releases/download/preview/Boshi-debug.apk
 
 Other source files: `CodeDecoder.java` reads the bundled asset by default, `DictionaryImporter.java` supports optional custom table import, and `SettingsActivity.java` shows the mapping count and AI controls.
+
+
+## v0.7 input behavior
+- The period key displays and inserts ASCII `.` in Chinese and English modes. In Chinese mode, pending code `s` followed by `.` inserts `？` without committing the `s` candidate. Other codes still commit normally before the period.
+- One to five Chinese characters use offline candidates and learned ordering only. AI (including the manual AI key) requires at least six Chinese characters; Latin codes, spaces, digits, and punctuation do not count.
+- AI supplements local candidates after a 400 ms pause. Pending decoded phrases get full-sentence alternatives; after committing text, AI suggests continuations for the current sentence. Sentence-ending punctuation and newlines reset the context.
+- Existing automatic AI and provider controls remain effective. Password fields do not send AI requests. Local candidates stay available during requests and on failure; stale responses cannot replace candidates after typing, deletion, language switching, or leaving a field.
+- Run rule regression checks with Java 17: `javac -d /tmp/boshi-tests app/src/main/java/tw/boshi/keyboard/InputRules.java tests/InputRulesTest.java && java -cp /tmp/boshi-tests tw.boshi.keyboard.InputRulesTest`. GitHub Actions runs these checks and compiles the APK for pull requests.

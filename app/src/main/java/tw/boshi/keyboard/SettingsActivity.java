@@ -74,11 +74,11 @@ public class SettingsActivity extends Activity {
   for(Button x:new Button[]{paste,save,clear})actions.addView(x,new LinearLayout.LayoutParams(0,-2,1));
   root.addView(actions);
   Button test=button("測試連線");root.addView(test);
-  Switch auto=new Switch(this);auto.setText("選字後自動 AI 聯想下一個詞");auto.setTextSize(16);auto.setPadding(0,dp(12),0,dp(4));auto.setChecked(p.getBoolean("auto_predict",true));root.addView(auto);
+  Switch auto=new Switch(this);auto.setText("6 個中文字起，自動 AI 輔助句子候選");auto.setTextSize(16);auto.setPadding(0,dp(12),0,dp(4));auto.setChecked(p.getBoolean("auto_predict",true));root.addView(auto);
   auto.setOnCheckedChangeListener((x,on)->p.edit().putBoolean("auto_predict",on).apply());
   Switch habits=new Switch(this);habits.setText("AI 聯想參考我的常用詞（最多 30 個常用詞會一起送給 AI）");habits.setTextSize(16);habits.setPadding(0,dp(8),0,dp(4));habits.setChecked(p.getBoolean("ai_habits",true));root.addView(habits);
   habits.setOnCheckedChangeListener((x,on)->p.edit().putBoolean("ai_habits",on).apply());
-  root.addView(text("每位使用者需自行輸入 API Key；金鑰以 Android Keystore 加密保存。開啟自動聯想時，每次選字後會把游標前最多 60 字送給 AI；按 AI ✨ 則送出目前的字碼內容。密碼欄位不會使用 AI。",14));
+  root.addView(text("每位使用者需自行輸入 API Key；金鑰以 Android Keystore 加密保存。1～5 個中文字只用一般候選；6 字起才使用 AI。自動聯想會送出目前句子（游標前最多 120 個 UTF-16 字元）；有待選字碼時，自動聯想或按 AI ✨ 會送出目前解碼的中文候選。密碼欄位不會使用 AI。",14));
   addLearningSection(root);
   Button source=button("開源字碼表來源與授權");root.addView(source);
   source.setOnClickListener(v->startActivity(new Intent(Intent.ACTION_VIEW,android.net.Uri.parse("https://github.com/jdh8/ibus-boshiamy"))));
@@ -176,3 +176,4 @@ public class SettingsActivity extends Activity {
  private int dp(int v){return (int)(v*getResources().getDisplayMetrics().density+.5f);}
  private void toast(String s){Toast.makeText(this,s,Toast.LENGTH_LONG).show();}
 }
+
