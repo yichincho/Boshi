@@ -18,7 +18,7 @@ public class BoshiImeService extends InputMethodService {
  private final Handler handler=new Handler(android.os.Looper.getMainLooper());private Runnable repeat;
  private final Runnable predictTask=this::predict;private final Map<String,List<String>> predictCache=new LinkedHashMap<String,List<String>>(){protected boolean removeEldestEntry(Map.Entry<String,List<String>> e){return size()>30;}};
  private int keyBg,keyFn,keyPressed,keyText,barText,accent;private int keyHeight;
- private UserDict dict;private String lastWord="";private boolean noLearn=false;
+ private UserDict dict;private OfflineSuggestions offline;private String lastWord="";private boolean noLearn=false;
 
  private int dp(float v){return (int)(v*getResources().getDisplayMetrics().density+.5f);}
  private TextView label(String s){TextView t=new TextView(this);t.setText(s);t.setTextSize(15);t.setTextColor(barText);t.setPadding(dp(10),0,dp(10),0);t.setGravity(Gravity.CENTER_VERTICAL);return t;}
@@ -33,6 +33,9 @@ public class BoshiImeService extends InputMethodService {
 
  @Override public View onCreateInputView(){
   decoder=new CodeDecoder();try{decoder.load(this);}catch(Exception ignored){}
+  offline=new OfflineSuggestions();
+  try{offline.load(new java.io.InputStreamReader(getAssets().open("offline_phrases.txt"),"UTF-8"));}
+  catch(Exception e){Toast.makeText(this,"內建聯想詞庫載入失敗，請重新安裝新版 APK",Toast.LENGTH_LONG).show();}
   dict=UserDict.get(this);try{AnalysisJob.schedule(this);}catch(Exception ignored){}
   root=new LinearLayout(this);root.setOrientation(LinearLayout.VERTICAL);root.setPadding(dp(3),0,dp(3),dp(6));
   loadTheme();
@@ -47,6 +50,7 @@ public class BoshiImeService extends InputMethodService {
   super.onStartInputView(info,restarting);
   int h=getSharedPreferences("config",MODE_PRIVATE).getInt("key_height",56);
   if(keys!=null&&h!=keyHeight){keyHeight=h;buildKeys();}
+  refresh();if(buffer.length()==0)schedulePredict();
  }
 
  private void buildKeys(){
@@ -103,14 +107,20 @@ public class BoshiImeService extends InputMethodService {
   if(buffer.length()>0)space();
   handler.removeCallbacks(predictTask);english=!english;shift=false;symbols=false;buildKeys();refresh();
  }
- private void back(){handler.removeCallbacks(predictTask);epoch++;if(buffer.length()>0){buffer.deleteCharAt(buffer.length()-1);refresh();}else{lastWord="";if(getCurrentInputConnection()!=null)getCurrentInputConnection().deleteSurroundingText(1,0);refresh();List<String> local=localSuggestions();if(!local.isEmpty())showPredictions(local);schedulePredict();}}
- private void commit(String s){InputConnection ic=getCurrentInputConnection();if(ic!=null)ic.commitText(s,1);buffer.setLength(0);epoch++;refresh();List<String> local=localSuggestions();if(!local.isEmpty())showPredictions(local);if(!s.trim().isEmpty())schedulePredict();}
+ private void back(){handler.removeCallbacks(predictTask);epoch++;if(buffer.length()>0){buffer.deleteCharAt(buffer.length()-1);refresh();}else{lastWord="";if(getCurrentInputConnection()!=null)getCurrentInputConnection().deleteSurroundingText(1,0);refresh();schedulePredict();}}
+ private void commit(String s){InputConnection ic=getCurrentInputConnection();if(ic!=null)ic.commitText(s,1);buffer.setLength(0);epoch++;refresh();if(!s.trim().isEmpty())schedulePredict();}
 
  private boolean learnEnabled(){return dict!=null&&!secure&&!noLearn&&getSharedPreferences("config",MODE_PRIVATE).getBoolean("learn",true);}
  /** Saves the pick to the on-device SQLite store (code may be null for a suggestion) and remembers it as context. */
  private void learn(String code,String word){if(!english&&learnEnabled())dict.record(code,lastWord,word);lastWord=word;}
- /** Words this user typed after the previous one before; instant and offline. */
- private List<String> localSuggestions(){return english||!learnEnabled()?new ArrayList<>():dict.suggestions(lastWord,5);}
+ /** Personal followers first, then bundled phrase completions, even with no learning history. */
+ private List<String> localSuggestions(){
+  if(english||secure||offline==null)return new ArrayList<>();
+  String context=beforeCursor();if(context.isEmpty())return new ArrayList<>();
+  String head=!lastWord.isEmpty()&&context.endsWith(lastWord)?lastWord:context.substring(context.offsetByCodePoints(context.length(),-1));
+  List<String> learned=learnEnabled()?dict.suggestions(head,8):new ArrayList<>();
+  return OfflineSuggestions.combine(learned,offline.suggest(context,8),8);
+ }
 
  /** Settings needed to call the AI, or null when AI is off or has no key. */
  private String[] aiConfig(){SharedPreferences p=getSharedPreferences("config",MODE_PRIVATE);int provider=p.getInt("provider",0);if(provider<1)return null;String key=new SecureKeyStore(this).get(SecureKeyStore.PROVIDERS[provider-1]);return key.isEmpty()?null:new String[]{String.valueOf(provider),key,SettingsActivity.model(p,provider)};}
@@ -193,7 +203,12 @@ public class BoshiImeService extends InputMethodService {
   t.setBackground(keyDrawable(0x00000000,keyPressed));t.setPadding(dp(14),0,dp(14),0);
   bar.addView(t,new LinearLayout.LayoutParams(-2,-1));t.setOnClickListener(v->commit(word));
  }
- private void refresh(){handler.removeCallbacks(predictTask);if(preedit==null||decoder==null)return;epoch++;String raw=buffer.toString();preedit.setText(raw);preedit.setVisibility(raw.isEmpty()?View.GONE:View.VISIBLE);candidates=decoder.decode(raw);if(dict!=null&&getSharedPreferences("config",MODE_PRIVATE).getBoolean("learn",true))candidates=dict.preferred(raw,candidates);bar.removeAllViews();if(raw.isEmpty()){bar.addView(label(english?"英文模式 · 點左下角「英」切回嘸蝦米":aiConfig()==null?"輸入字碼開始打字 · 設定 AI Key 後，6 字起可自動聯想":"輸入字碼開始打字"),new LinearLayout.LayoutParams(-2,-1));return;}
+ private void refresh(){handler.removeCallbacks(predictTask);if(preedit==null||decoder==null)return;epoch++;String raw=buffer.toString();preedit.setText(raw);preedit.setVisibility(raw.isEmpty()?View.GONE:View.VISIBLE);candidates=decoder.decode(raw);if(dict!=null&&getSharedPreferences("config",MODE_PRIVATE).getBoolean("learn",true))candidates=dict.preferred(raw,candidates);bar.removeAllViews();if(raw.isEmpty()){
+  List<String> local=localSuggestions();
+  if(!local.isEmpty())showPredictions(local);
+  else bar.addView(label(english?"英文模式 · 點左下角「英」切回嘸蝦米":beforeCursor().isEmpty()?"輸入字碼開始打字":"暫無接續詞，請繼續輸入字碼"),new LinearLayout.LayoutParams(-2,-1));
+  return;
+ }
  if(candidates.isEmpty())bar.addView(label("未匹配字碼；空白鍵輸出英文"),new LinearLayout.LayoutParams(-2,-1));
  for(int i=0;i<candidates.size();i++)candidate(candidates.get(i),i==0,raw);
  if(InputRules.useAi(composedText()))schedulePredict();

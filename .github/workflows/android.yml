@@ -56,11 +56,23 @@ jobs:
           Path('app/src/main/assets/boshiamy.tsv').write_text('\n'.join(lines)+'\n', encoding='utf-8')
           print(f'Bundled {len(lines)} unique mappings')
           PY
+      - name: Bundle offline phrase vocabulary
+        run: |
+          source=https://raw.githubusercontent.com/rime/rime-essay/054920de4f54c9e5994276a96a4fc2a35cb51aa3
+          curl --fail --location --retry 3 --connect-timeout 15 --max-time 120 "$source/essay.txt" -o /tmp/rime-essay.txt
+          mkdir -p app/src/main/assets/rime-essay
+          curl --fail --location --retry 3 "$source/LICENSE" -o app/src/main/assets/rime-essay/LICENSE
+          curl --fail --location --retry 3 "$source/AUTHORS" -o app/src/main/assets/rime-essay/AUTHORS
+          cp /usr/share/common-licenses/GPL-3 app/src/main/assets/rime-essay/GPL-3
+          printf '%s\n' "Source: $source/essay.txt" "Modified: selected and frequency-sorted phrases, preceded by Boshi conversation seeds." > app/src/main/assets/rime-essay/SOURCE.txt
+          python3 scripts/build_offline_lexicon.py /tmp/rime-essay.txt app/src/main/assets/offline_phrases.txt
       - name: Test input rules
         run: |
           mkdir -p /tmp/boshi-tests
-          javac -d /tmp/boshi-tests app/src/main/java/tw/boshi/keyboard/InputRules.java tests/InputRulesTest.java
+          javac -d /tmp/boshi-tests app/src/main/java/tw/boshi/keyboard/InputRules.java app/src/main/java/tw/boshi/keyboard/OfflineSuggestions.java tests/InputRulesTest.java tests/OfflineSuggestionsTest.java
           java -cp /tmp/boshi-tests tw.boshi.keyboard.InputRulesTest
+          java -cp /tmp/boshi-tests tw.boshi.keyboard.OfflineSuggestionsTest app/src/main/assets/offline_phrases.txt
+          python3 -m unittest discover -s tests -p 'test_*.py' -v
       - name: Compile
         run: gradle --no-daemon assembleDebug
       - name: Upload single APK to release
@@ -79,9 +91,10 @@ jobs:
           )
           title="Boshi v${version} preview"
           printf '%s\n' "Boshi AI Keyboard v${version}" \
-            "" "Includes the offline Boshiamy dictionary and optional Gemini/NVIDIA AI assistance." \
+            "" "Includes the offline Boshiamy dictionary, bundled Rime phrase continuations, and optional Gemini/NVIDIA AI assistance." \
             "Chinese S + period outputs ？; the period key outputs ASCII ." \
             "1–5 Chinese characters use local candidates; AI assistance starts at 6 characters." \
+            "v0.7.1 fixes missing offline next-word candidates on fresh installs, including after 有 and 我是有." \
             "" "Build source: https://github.com/${GITHUB_REPOSITORY}/commit/${GITHUB_SHA}" \
             > /tmp/boshi-release-notes.txt
           cp app/build/outputs/apk/debug/app-debug.apk Boshi-debug.apk
@@ -91,3 +104,4 @@ jobs:
           else
             gh release create preview Boshi-debug.apk --prerelease --title "$title" --notes-file /tmp/boshi-release-notes.txt
           fi
+
