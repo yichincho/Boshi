@@ -18,7 +18,7 @@ public class BoshiImeService extends InputMethodService {
  private final Handler handler=new Handler(android.os.Looper.getMainLooper());private Runnable repeat;
  private final Runnable predictTask=this::predict;private final Map<String,List<String>> predictCache=new LinkedHashMap<String,List<String>>(){protected boolean removeEldestEntry(Map.Entry<String,List<String>> e){return size()>30;}};
  private int keyBg,keyFn,keyPressed,keyText,barText,accent;private int keyHeight;
- private UserDict dict;private OfflineSuggestions offline;private String lastWord="";private boolean noLearn=false;
+ private UserDict dict;private OfflineSuggestions offline;private TextView voiceKey;private VoiceInputController voice;private InputConnection voiceTarget;private String lastWord="";private boolean noLearn=false;
 
  private int dp(float v){return (int)(v*getResources().getDisplayMetrics().density+.5f);}
  private TextView label(String s){TextView t=new TextView(this);t.setText(s);t.setTextSize(15);t.setTextColor(barText);t.setPadding(dp(10),0,dp(10),0);t.setGravity(Gravity.CENTER_VERTICAL);return t;}
@@ -42,6 +42,22 @@ public class BoshiImeService extends InputMethodService {
   LinearLayout top=new LinearLayout(this);top.setGravity(Gravity.CENTER_VERTICAL);root.addView(top,new LinearLayout.LayoutParams(-1,dp(48)));
   preedit=label("");preedit.setTextColor(accent);preedit.setTypeface(Typeface.MONOSPACE,Typeface.BOLD);top.addView(preedit,new LinearLayout.LayoutParams(-2,-1));
   HorizontalScrollView scroll=new HorizontalScrollView(this);scroll.setHorizontalScrollBarEnabled(false);bar=new LinearLayout(this);bar.setGravity(Gravity.CENTER_VERTICAL);scroll.addView(bar,new FrameLayout.LayoutParams(-2,-1));top.addView(scroll,new LinearLayout.LayoutParams(0,-1,1));
+  voiceKey=label("🎤");voiceKey.setTextSize(23);voiceKey.setGravity(Gravity.CENTER);
+  voiceKey.setTextColor(accent);voiceKey.setBackground(keyDrawable(keyFn,keyPressed));
+  voiceKey.setContentDescription("開始語音輸入");
+  top.addView(voiceKey,new LinearLayout.LayoutParams(dp(48),-1));voiceKey.setOnClickListener(v->toggleVoice());
+  if(voice==null)voice=new VoiceInputController(this,new VoiceInputController.Listener(){
+   public void onState(String text,boolean listening,boolean active){
+    if(voiceKey!=null){voiceKey.setText(active?(listening?"■":"…"):"🎤");voiceKey.setContentDescription(active?(listening?"停止語音輸入":"正在辨識語音"):"開始語音輸入");}
+    if(active){bar.removeAllViews();bar.addView(label(text),new LinearLayout.LayoutParams(-2,-1));}
+    else refresh();
+   }
+   public void onText(String text){
+    InputConnection target=voiceTarget;voiceTarget=null;
+    if(target!=null&&target==getCurrentInputConnection()&&!secure){lastWord="";commit(text);}
+   }
+   public void onError(String message){voiceTarget=null;Toast.makeText(BoshiImeService.this,message,Toast.LENGTH_LONG).show();}
+  });
   keys=new LinearLayout(this);keys.setOrientation(LinearLayout.VERTICAL);root.addView(keys);
   buildKeys();refresh();return root;
  }
@@ -97,18 +113,20 @@ public class BoshiImeService extends InputMethodService {
   del.setOnTouchListener((v,e)->{if((e.getAction()==MotionEvent.ACTION_UP||e.getAction()==MotionEvent.ACTION_CANCEL)&&repeat!=null){handler.removeCallbacks(repeat);repeat=null;}return false;});
  }
 
- @Override public void onStartInput(EditorInfo info,boolean restarting){super.onStartInput(info,restarting);int variation=info.inputType&android.text.InputType.TYPE_MASK_VARIATION;secure=variation==android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD||variation==android.text.InputType.TYPE_TEXT_VARIATION_WEB_PASSWORD||variation==android.text.InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD||variation==android.text.InputType.TYPE_NUMBER_VARIATION_PASSWORD;int cls=info.inputType&android.text.InputType.TYPE_MASK_CLASS;if(cls==android.text.InputType.TYPE_CLASS_NUMBER||cls==android.text.InputType.TYPE_CLASS_PHONE)secure=true;noLearn=(info.imeOptions&EditorInfo.IME_FLAG_NO_PERSONALIZED_LEARNING)!=0;lastWord="";handler.removeCallbacks(predictTask);buffer.setLength(0);epoch++;refresh();}
+ @Override public void onStartInput(EditorInfo info,boolean restarting){super.onStartInput(info,restarting);cancelVoice();int variation=info.inputType&android.text.InputType.TYPE_MASK_VARIATION;secure=variation==android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD||variation==android.text.InputType.TYPE_TEXT_VARIATION_WEB_PASSWORD||variation==android.text.InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD||variation==android.text.InputType.TYPE_NUMBER_VARIATION_PASSWORD;int cls=info.inputType&android.text.InputType.TYPE_MASK_CLASS;if(cls==android.text.InputType.TYPE_CLASS_NUMBER||cls==android.text.InputType.TYPE_CLASS_PHONE)secure=true;noLearn=(info.imeOptions&EditorInfo.IME_FLAG_NO_PERSONALIZED_LEARNING)!=0;lastWord="";handler.removeCallbacks(predictTask);buffer.setLength(0);epoch++;refresh();}
  private void type(char c){
+  cancelVoice();
   if(english){InputConnection ic=getCurrentInputConnection();if(ic!=null)ic.commitText(String.valueOf(shift?Character.toUpperCase(c):c),1);if(shift){shift=false;buildKeys();}return;}
   if(buffer.length()<48)buffer.append(c);refresh();}
 
  /** 中/英 key: English types letters straight into the field; pending Boshiamy codes are committed first. */
  private void toggleLanguage(){
+  cancelVoice();
   if(buffer.length()>0)space();
   handler.removeCallbacks(predictTask);english=!english;shift=false;symbols=false;buildKeys();refresh();
  }
- private void back(){handler.removeCallbacks(predictTask);epoch++;if(buffer.length()>0){buffer.deleteCharAt(buffer.length()-1);refresh();}else{lastWord="";if(getCurrentInputConnection()!=null)getCurrentInputConnection().deleteSurroundingText(1,0);refresh();schedulePredict();}}
- private void commit(String s){InputConnection ic=getCurrentInputConnection();if(ic!=null)ic.commitText(s,1);buffer.setLength(0);epoch++;refresh();if(!s.trim().isEmpty())schedulePredict();}
+ private void back(){cancelVoice();handler.removeCallbacks(predictTask);epoch++;if(buffer.length()>0){buffer.deleteCharAt(buffer.length()-1);refresh();}else{lastWord="";if(getCurrentInputConnection()!=null)getCurrentInputConnection().deleteSurroundingText(1,0);refresh();schedulePredict();}}
+ private void commit(String s){cancelVoice();InputConnection ic=getCurrentInputConnection();if(ic!=null)ic.commitText(s,1);buffer.setLength(0);epoch++;refresh();if(!s.trim().isEmpty())schedulePredict();}
 
  private boolean learnEnabled(){return dict!=null&&!secure&&!noLearn&&getSharedPreferences("config",MODE_PRIVATE).getBoolean("learn",true);}
  /** Saves the pick to the on-device SQLite store (code may be null for a suggestion) and remembers it as context. */
@@ -191,10 +209,10 @@ public class BoshiImeService extends InputMethodService {
   if("？".equals(mark)){buffer.setLength(0);lastWord="";commit(mark);}
   else symbol(mark);
  }
- private void symbol(String s){if(english){commitPlain(s);return;}if(buffer.length()>0){String w=candidates.isEmpty()?buffer.toString():candidates.get(0);if(!candidates.isEmpty())learn(buffer.toString(),w);lastWord="";commit(w+s);}else{lastWord="";commit(s);}}
+ private void symbol(String s){cancelVoice();if(english){commitPlain(s);return;}if(buffer.length()>0){String w=candidates.isEmpty()?buffer.toString():candidates.get(0);if(!candidates.isEmpty())learn(buffer.toString(),w);lastWord="";commit(w+s);}else{lastWord="";commit(s);}}
  private void commitPlain(String s){InputConnection ic=getCurrentInputConnection();if(ic!=null)ic.commitText(s,1);}
- private void space(){if(english){commitPlain(" ");return;}if(buffer.length()>0){if(candidates.isEmpty()){lastWord="";commit(buffer.toString());}else{String w=candidates.get(0);learn(buffer.toString(),w);commit(w);}}else{lastWord="";commit(" ");}}
- private void enter(){if(buffer.length()>0)space();lastWord="";InputConnection ic=getCurrentInputConnection();if(ic!=null){ic.sendKeyEvent(new KeyEvent(KeyEvent.ACTION_DOWN,KeyEvent.KEYCODE_ENTER));ic.sendKeyEvent(new KeyEvent(KeyEvent.ACTION_UP,KeyEvent.KEYCODE_ENTER));}}
+ private void space(){cancelVoice();if(english){commitPlain(" ");return;}if(buffer.length()>0){if(candidates.isEmpty()){lastWord="";commit(buffer.toString());}else{String w=candidates.get(0);learn(buffer.toString(),w);commit(w);}}else{lastWord="";commit(" ");}}
+ private void enter(){cancelVoice();if(buffer.length()>0)space();lastWord="";InputConnection ic=getCurrentInputConnection();if(ic!=null){ic.sendKeyEvent(new KeyEvent(KeyEvent.ACTION_DOWN,KeyEvent.KEYCODE_ENTER));ic.sendKeyEvent(new KeyEvent(KeyEvent.ACTION_UP,KeyEvent.KEYCODE_ENTER));}}
 
  /** A candidate that is learned when tapped: code is the typed Boshiamy code, or null for a next-word suggestion. */
  private void candidate(String word,boolean first,String code){candidate(word,first);bar.getChildAt(bar.getChildCount()-1).setOnClickListener(v->{learn(code,word);commit(word);});}
@@ -214,10 +232,36 @@ public class BoshiImeService extends InputMethodService {
  if(InputRules.useAi(composedText()))schedulePredict();
  }
  private void ai(){
+  cancelVoice();
   if(secure){Toast.makeText(this,"密碼欄位不使用 AI",Toast.LENGTH_SHORT).show();return;}
   requestAi(true);
  }
+ private void toggleVoice(){
+  if(secure){Toast.makeText(this,"此欄位不使用語音輸入",Toast.LENGTH_SHORT).show();return;}
+  if(voice==null)return;
+  if(voice.active()){
+   if(voice.processing())Toast.makeText(this,"正在轉成文字，請稍候",Toast.LENGTH_SHORT).show();
+   else voice.stop();
+   return;
+  }
+  if(buffer.length()>0){Toast.makeText(this,"請先完成目前選字，再點 🎤 語音輸入",Toast.LENGTH_SHORT).show();return;}
+  if(checkSelfPermission(android.Manifest.permission.RECORD_AUDIO)!=android.content.pm.PackageManager.PERMISSION_GRANTED){
+   try{startActivity(new android.content.Intent(this,VoicePermissionActivity.class).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK));}
+   catch(RuntimeException e){Toast.makeText(this,"請開啟 Boshi 設定允許麥克風權限",Toast.LENGTH_LONG).show();}
+   return;
+  }
+  voiceTarget=getCurrentInputConnection();if(voiceTarget==null)return;
+  handler.removeCallbacks(predictTask);epoch++;voice.start();
+ }
+ private void cancelVoice(){voiceTarget=null;if(voice!=null)voice.cancel();}
+ @Override public void onUpdateSelection(int oldStart,int oldEnd,int newStart,int newEnd,int candidatesStart,int candidatesEnd){
+  super.onUpdateSelection(oldStart,oldEnd,newStart,newEnd,candidatesStart,candidatesEnd);
+  if(voice!=null&&voice.active()&&(oldStart!=newStart||oldEnd!=newEnd))cancelVoice();
+ }
+ @Override public void onFinishInputView(boolean finishingInput){cancelVoice();handler.removeCallbacks(predictTask);epoch++;super.onFinishInputView(finishingInput);}
+ @Override public void onDestroy(){cancelVoice();handler.removeCallbacks(predictTask);super.onDestroy();}
  @Override public void onFinishInput(){
+  cancelVoice();
   handler.removeCallbacks(predictTask);epoch++;buffer.setLength(0);
   if(repeat!=null){handler.removeCallbacks(repeat);repeat=null;}
   super.onFinishInput();
