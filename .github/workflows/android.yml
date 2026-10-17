@@ -2,6 +2,7 @@ name: Android build & APK release
 on:
   push:
     branches: [main]
+  pull_request:
   workflow_dispatch:
 jobs:
   build:
@@ -55,9 +56,15 @@ jobs:
           Path('app/src/main/assets/boshiamy.tsv').write_text('\n'.join(lines)+'\n', encoding='utf-8')
           print(f'Bundled {len(lines)} unique mappings')
           PY
+      - name: Test input rules
+        run: |
+          mkdir -p /tmp/boshi-tests
+          javac -d /tmp/boshi-tests app/src/main/java/tw/boshi/keyboard/InputRules.java tests/InputRulesTest.java
+          java -cp /tmp/boshi-tests tw.boshi.keyboard.InputRulesTest
       - name: Compile
         run: gradle --no-daemon assembleDebug
       - name: Upload single APK to release
+        if: github.event_name != 'pull_request'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -67,3 +74,4 @@ jobs:
           else
             gh release create preview Boshi-debug.apk --prerelease --title "Boshi v0.1 preview" --notes "Experimental Android keyboard with TSV import, offline phrase candidates and opt-in Gemini/NVIDIA API. No bundled Boshiamy table."
           fi
+

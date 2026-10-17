@@ -66,10 +66,10 @@ public class BoshiImeService extends InputMethodService {
   LinearLayout bottom=row();
   TextView lang=addKey(bottom,english?"英":"中",this::toggleLanguage,1.2f,true);lang.setTextColor(accent);lang.setTypeface(null,Typeface.BOLD);
   addKey(bottom,symbols?"ABC":"?123",()->{symbols=!symbols;buildKeys();},1.3f,true);
-  String comma=english?",":(symbols?"、":"，"),period=english?".":"。";
+  String comma=english?",":(symbols?"、":"，"),period=".";
   addKey(bottom,comma,()->symbol(comma),1,true);
   addKey(bottom,english?"English":"嘸蝦米",this::space,3.5f,false);
-  addKey(bottom,period,()->symbol(period),1,true);
+  addKey(bottom,period,this::period,1,true);
   TextView enter=addKey(bottom,"↵",this::enter,1.5f,true);enter.setTextColor(0xffffffff);enter.setBackground(keyDrawable(accent,keyPressed));
  }
 
@@ -103,7 +103,7 @@ public class BoshiImeService extends InputMethodService {
   if(buffer.length()>0)space();
   handler.removeCallbacks(predictTask);english=!english;shift=false;symbols=false;buildKeys();refresh();
  }
- private void back(){if(buffer.length()>0){buffer.deleteCharAt(buffer.length()-1);refresh();}else{lastWord="";if(getCurrentInputConnection()!=null)getCurrentInputConnection().deleteSurroundingText(1,0);}}
+ private void back(){handler.removeCallbacks(predictTask);epoch++;if(buffer.length()>0){buffer.deleteCharAt(buffer.length()-1);refresh();}else{lastWord="";if(getCurrentInputConnection()!=null)getCurrentInputConnection().deleteSurroundingText(1,0);refresh();List<String> local=localSuggestions();if(!local.isEmpty())showPredictions(local);schedulePredict();}}
  private void commit(String s){InputConnection ic=getCurrentInputConnection();if(ic!=null)ic.commitText(s,1);buffer.setLength(0);epoch++;refresh();List<String> local=localSuggestions();if(!local.isEmpty())showPredictions(local);if(!s.trim().isEmpty())schedulePredict();}
 
  private boolean learnEnabled(){return dict!=null&&!secure&&!noLearn&&getSharedPreferences("config",MODE_PRIVATE).getBoolean("learn",true);}
@@ -114,28 +114,73 @@ public class BoshiImeService extends InputMethodService {
 
  /** Settings needed to call the AI, or null when AI is off or has no key. */
  private String[] aiConfig(){SharedPreferences p=getSharedPreferences("config",MODE_PRIVATE);int provider=p.getInt("provider",0);if(provider<1)return null;String key=new SecureKeyStore(this).get(SecureKeyStore.PROVIDERS[provider-1]);return key.isEmpty()?null:new String[]{String.valueOf(provider),key,SettingsActivity.model(p,provider)};}
- private boolean autoPredict(){return !secure&&getSharedPreferences("config",MODE_PRIVATE).getBoolean("auto_predict",true);}
+ private boolean autoPredict(){return !secure&&!english&&getSharedPreferences("config",MODE_PRIVATE).getBoolean("auto_predict",true);}
 
  /** After a pick, wait briefly so quick typing does not send one request per character. */
  private void schedulePredict(){handler.removeCallbacks(predictTask);if(autoPredict())handler.postDelayed(predictTask,400);}
 
- /** Shows AI follow-up suggestions for the text before the cursor; tapping one inserts it and predicts again. */
- private void predict(){
-  if(buffer.length()>0||!autoPredict()||bar==null)return;
-  String[] cfg=aiConfig();if(cfg==null)return;
-  InputConnection ic=getCurrentInputConnection();CharSequence cs=ic==null?null:ic.getTextBeforeCursor(60,0);
-  String before=cs==null?"":cs.toString().trim();if(before.isEmpty())return;
-  int requestEpoch=epoch;List<String> local=localSuggestions(),cached=predictCache.get(before);
-  if(cached!=null){showPredictions(merge(local,cached));return;}
-  List<String> habits=learnEnabled()&&getSharedPreferences("config",MODE_PRIVATE).getBoolean("ai_habits",true)?dict.habits(lastWord):new ArrayList<>();
-  if(local.isEmpty())bar.removeAllViews();bar.addView(label("AI 聯想中…"),new LinearLayout.LayoutParams(-2,-1));
+ /** The current sentence only; earlier sentences do not satisfy the six-character gate. */
+ private String beforeCursor(){
+  InputConnection ic=getCurrentInputConnection();CharSequence cs=ic==null?null:ic.getTextBeforeCursor(120,0);
+  return InputRules.sentence(cs==null?"":cs.toString());
+ }
+ private String composedText(){return candidates.isEmpty()?"":candidates.get(0);}
+
+ /** Automatic requests keep local candidates visible, then append AI suggestions. */
+ private void predict(){requestAi(false);}
+ private void requestAi(boolean manual){
+  handler.removeCallbacks(predictTask);
+  if(secure||english||bar==null||(!manual&&!autoPredict()))return;
+  final String raw=buffer.toString();final boolean composing=!raw.isEmpty();
+  // With pending codes, AI suggests complete replacements; otherwise it suggests continuations.
+  final String text=composing?composedText():beforeCursor();
+  if(!InputRules.useAi(text)){
+   if(manual)Toast.makeText(this,"1～5 個中文字使用一般候選，6 字起才使用 AI",Toast.LENGTH_SHORT).show();
+   return;
+  }
+  final String[] cfg=aiConfig();
+  if(cfg==null){if(manual)Toast.makeText(this,"請先開啟 Boshi 設定並填寫 AI Key",Toast.LENGTH_SHORT).show();return;}
+  final int requestEpoch=++epoch;
+  final String before=beforeCursor();
+  final String cacheKey=cfg[0]+":"+cfg[2]+":"+(composing?"compose:":"next:")+text;
+  final List<String> local=composing?new ArrayList<>(candidates):localSuggestions();
+  List<String> cached=predictCache.get(cacheKey);
+  if(cached!=null){showAiCandidates(merge(local,cached),composing?raw:null,local.size());return;}
+  final List<String> habits=learnEnabled()&&getSharedPreferences("config",MODE_PRIVATE).getBoolean("ai_habits",true)?dict.habits(lastWord):new ArrayList<>();
+  showAiCandidates(local,composing?raw:null,local.size());
+  bar.addView(label("AI 聯想中…"),new LinearLayout.LayoutParams(-2,-1));
   new Thread(()->{
-   try{List<String> list=AiClient.predict(Integer.parseInt(cfg[0]),cfg[1],cfg[2],before,habits);handler.post(()->{predictCache.put(before,list);if(requestEpoch==epoch&&buffer.length()==0)showPredictions(merge(local,list));});}
-   catch(Exception e){handler.post(()->{if(requestEpoch==epoch&&buffer.length()==0){showPredictions(local);bar.addView(label("AI 聯想失敗："+e.getMessage()),new LinearLayout.LayoutParams(-2,-1));}});}
+   try{
+    List<String> list=composing?AiClient.query(Integer.parseInt(cfg[0]),cfg[1],cfg[2],text):AiClient.predict(Integer.parseInt(cfg[0]),cfg[1],cfg[2],text,habits);
+    handler.post(()->{
+     if(!currentRequest(requestEpoch,raw,before,manual))return;
+     predictCache.put(cacheKey,list);showAiCandidates(merge(local,list),composing?raw:null,local.size());
+    });
+   }catch(Exception e){handler.post(()->{
+    if(!currentRequest(requestEpoch,raw,before,manual))return;
+    showAiCandidates(local,composing?raw:null,local.size());
+    Toast.makeText(this,"AI 聯想失敗，保留一般候選",Toast.LENGTH_SHORT).show();
+   });}
   }).start();
  }
- private void showPredictions(List<String> list){bar.removeAllViews();if(list.isEmpty()){bar.addView(label("沒有聯想候選"),new LinearLayout.LayoutParams(-2,-1));return;}for(int i=0;i<list.size();i++)candidate(list.get(i),i==0,null);}
+ private boolean currentRequest(int requestEpoch,String raw,String before,boolean manual){
+  return requestEpoch==epoch&&!secure&&!english&&bar!=null&&(manual||autoPredict())
+   &&raw.equals(buffer.toString())&&before.equals(beforeCursor());
+ }
+ private void showAiCandidates(List<String> list,String code,int localCount){
+  bar.removeAllViews();
+  for(int i=0;i<list.size();i++){
+   if(code!=null&&i>=localCount)candidate(list.get(i),false); // AI rewrites are not literal dictionary mappings.
+   else candidate(list.get(i),i==0,code);
+  }
+ }
+ private void showPredictions(List<String> list){showAiCandidates(list,null,list.size());}
  private static List<String> merge(List<String> a,List<String> b){LinkedHashSet<String> s=new LinkedHashSet<>(a);s.addAll(b);return new ArrayList<>(s);}
+ private void period(){
+  String mark=InputRules.period(buffer.toString(),english);
+  if("？".equals(mark)){buffer.setLength(0);lastWord="";commit(mark);}
+  else symbol(mark);
+ }
  private void symbol(String s){if(english){commitPlain(s);return;}if(buffer.length()>0){String w=candidates.isEmpty()?buffer.toString():candidates.get(0);if(!candidates.isEmpty())learn(buffer.toString(),w);lastWord="";commit(w+s);}else{lastWord="";commit(s);}}
  private void commitPlain(String s){InputConnection ic=getCurrentInputConnection();if(ic!=null)ic.commitText(s,1);}
  private void space(){if(english){commitPlain(" ");return;}if(buffer.length()>0){if(candidates.isEmpty()){lastWord="";commit(buffer.toString());}else{String w=candidates.get(0);learn(buffer.toString(),w);commit(w);}}else{lastWord="";commit(" ");}}
@@ -148,13 +193,18 @@ public class BoshiImeService extends InputMethodService {
   t.setBackground(keyDrawable(0x00000000,keyPressed));t.setPadding(dp(14),0,dp(14),0);
   bar.addView(t,new LinearLayout.LayoutParams(-2,-1));t.setOnClickListener(v->commit(word));
  }
- private void refresh(){if(preedit==null||decoder==null)return;epoch++;String raw=buffer.toString();preedit.setText(raw);preedit.setVisibility(raw.isEmpty()?View.GONE:View.VISIBLE);candidates=decoder.decode(raw);if(dict!=null&&getSharedPreferences("config",MODE_PRIVATE).getBoolean("learn",true))candidates=dict.preferred(raw,candidates);bar.removeAllViews();if(raw.isEmpty()){bar.addView(label(english?"英文模式 · 點左下角「英」切回嘸蝦米":aiConfig()==null?"輸入字碼開始打字 · 設定 AI Key 後選字會自動聯想":"輸入字碼開始打字"),new LinearLayout.LayoutParams(-2,-1));return;}
+ private void refresh(){handler.removeCallbacks(predictTask);if(preedit==null||decoder==null)return;epoch++;String raw=buffer.toString();preedit.setText(raw);preedit.setVisibility(raw.isEmpty()?View.GONE:View.VISIBLE);candidates=decoder.decode(raw);if(dict!=null&&getSharedPreferences("config",MODE_PRIVATE).getBoolean("learn",true))candidates=dict.preferred(raw,candidates);bar.removeAllViews();if(raw.isEmpty()){bar.addView(label(english?"英文模式 · 點左下角「英」切回嘸蝦米":aiConfig()==null?"輸入字碼開始打字 · 設定 AI Key 後，6 字起可自動聯想":"輸入字碼開始打字"),new LinearLayout.LayoutParams(-2,-1));return;}
  if(candidates.isEmpty())bar.addView(label("未匹配字碼；空白鍵輸出英文"),new LinearLayout.LayoutParams(-2,-1));
  for(int i=0;i<candidates.size();i++)candidate(candidates.get(i),i==0,raw);
+ if(InputRules.useAi(composedText()))schedulePredict();
  }
- private void ai(){if(secure){Toast.makeText(this,"密碼欄位不使用 AI",Toast.LENGTH_SHORT).show();return;}if(buffer.length()==0)return;String[] cfg=aiConfig();if(cfg==null){Toast.makeText(this,"請先開啟 Boshi 設定並填寫 AI Key",Toast.LENGTH_SHORT).show();return;}
- String text=candidates.isEmpty()?buffer.toString():candidates.get(0);int requestEpoch=epoch;bar.removeAllViews();bar.addView(label("AI 生成中…"),new LinearLayout.LayoutParams(-2,-1));
- new Thread(()->{try{List<String> list=AiClient.query(Integer.parseInt(cfg[0]),cfg[1],cfg[2],text);handler.post(()->{if(requestEpoch!=epoch||bar==null)return;bar.removeAllViews();for(int i=0;i<list.size();i++)candidate(list.get(i),i==0);if(list.isEmpty())bar.addView(label("無有效候選"),new LinearLayout.LayoutParams(-2,-1));});}
- catch(Exception e){handler.post(()->{if(requestEpoch==epoch){refresh();Toast.makeText(this,"AI 失敗："+e.getMessage(),Toast.LENGTH_SHORT).show();}});}}).start();
+ private void ai(){
+  if(secure){Toast.makeText(this,"密碼欄位不使用 AI",Toast.LENGTH_SHORT).show();return;}
+  requestAi(true);
+ }
+ @Override public void onFinishInput(){
+  handler.removeCallbacks(predictTask);epoch++;buffer.setLength(0);
+  if(repeat!=null){handler.removeCallbacks(repeat);repeat=null;}
+  super.onFinishInput();
  }
 }
