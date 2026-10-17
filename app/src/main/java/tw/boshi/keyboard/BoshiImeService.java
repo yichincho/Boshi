@@ -18,7 +18,7 @@ public class BoshiImeService extends InputMethodService {
  private final Handler handler=new Handler(android.os.Looper.getMainLooper());private Runnable repeat;
  private final Runnable predictTask=this::predict;private final Map<String,List<String>> predictCache=new LinkedHashMap<String,List<String>>(){protected boolean removeEldestEntry(Map.Entry<String,List<String>> e){return size()>30;}};
  private int keyBg,keyFn,keyPressed,keyText,barText,accent;private int keyHeight;
- private UserDict dict;private OfflineSuggestions offline;private TextView voiceKey;private VoiceInputController voice;private InputConnection voiceTarget;private String lastWord="";private boolean noLearn=false;
+ private QuickPhraseBook quickPhrases=new QuickPhraseBook();private UserDict dict;private OfflineSuggestions offline;private TextView voiceKey;private VoiceInputController voice;private InputConnection voiceTarget;private String lastWord="";private boolean noLearn=false;
 
  private int dp(float v){return (int)(v*getResources().getDisplayMetrics().density+.5f);}
  private TextView label(String s){TextView t=new TextView(this);t.setText(s);t.setTextSize(15);t.setTextColor(barText);t.setPadding(dp(10),0,dp(10),0);t.setGravity(Gravity.CENTER_VERTICAL);return t;}
@@ -59,14 +59,14 @@ public class BoshiImeService extends InputMethodService {
    public void onError(String message){voiceTarget=null;Toast.makeText(BoshiImeService.this,message,Toast.LENGTH_LONG).show();}
   });
   keys=new LinearLayout(this);keys.setOrientation(LinearLayout.VERTICAL);root.addView(keys);
-  buildKeys();refresh();return root;
+  loadQuickPhrases();buildKeys();refresh();return root;
  }
 
  @Override public void onStartInputView(EditorInfo info,boolean restarting){
   super.onStartInputView(info,restarting);
   int h=getSharedPreferences("config",MODE_PRIVATE).getInt("key_height",56);
   if(keys!=null&&h!=keyHeight){keyHeight=h;buildKeys();}
-  refresh();if(buffer.length()==0)schedulePredict();
+  loadQuickPhrases();refresh();if(buffer.length()==0)schedulePredict();
  }
 
  private void buildKeys(){
@@ -160,6 +160,10 @@ public class BoshiImeService extends InputMethodService {
   handler.removeCallbacks(predictTask);
   if(secure||english||bar==null||(!manual&&!autoPredict()))return;
   final String raw=buffer.toString();final boolean composing=!raw.isEmpty();
+  if(composing&&quickPhrases.find(raw)!=null){
+   if(manual)Toast.makeText(this,"點選 📌 片語名稱即可插入完整原文",Toast.LENGTH_SHORT).show();
+   return;
+  }
   // With pending codes, AI suggests complete replacements; otherwise it suggests continuations.
   final String text=composing?composedText():beforeCursor();
   if(!InputRules.useAi(text)){
@@ -227,9 +231,27 @@ public class BoshiImeService extends InputMethodService {
   else bar.addView(label(english?"英文模式 · 點左下角「英」切回嘸蝦米":beforeCursor().isEmpty()?"輸入字碼開始打字":"暫無接續詞，請繼續輸入字碼"),new LinearLayout.LayoutParams(-2,-1));
   return;
  }
- if(candidates.isEmpty())bar.addView(label("未匹配字碼；空白鍵輸出英文"),new LinearLayout.LayoutParams(-2,-1));
+ QuickPhraseBook.Entry shortcut=secure||english?null:quickPhrases.find(raw);
+ if(shortcut!=null)quickPhraseCandidate(shortcut);
+ if(candidates.isEmpty()&&shortcut==null)bar.addView(label("未匹配字碼；空白鍵輸出英文"),new LinearLayout.LayoutParams(-2,-1));
  for(int i=0;i<candidates.size();i++)candidate(candidates.get(i),i==0,raw);
- if(InputRules.useAi(composedText()))schedulePredict();
+ if(shortcut==null&&InputRules.useAi(composedText()))schedulePredict();
+ }
+ private void loadQuickPhrases(){
+  try{quickPhrases=new QuickPhraseStore(this).load();}
+  catch(IllegalArgumentException e){quickPhrases=new QuickPhraseBook();Toast.makeText(this,e.getMessage(),Toast.LENGTH_LONG).show();}
+ }
+ private void quickPhraseCandidate(QuickPhraseBook.Entry entry){
+  TextView item=label("📌 "+entry.name);item.setTextSize(19);item.setTextColor(accent);
+  item.setBackground(keyDrawable(0x00000000,keyPressed));item.setContentDescription("常用字串："+entry.name+"，點選插入完整內容");
+  bar.addView(item,new LinearLayout.LayoutParams(-2,-1));
+  item.setOnClickListener(v->{
+   cancelVoice();handler.removeCallbacks(predictTask);epoch++;
+   InputConnection ic=getCurrentInputConnection();if(ic==null)return;
+   ic.commitText(entry.text,1);buffer.setLength(0);lastWord="";
+   // Literal snippets do not enter learned picks/habits or trigger an AI request.
+   refresh();
+  });
  }
  private void ai(){
   cancelVoice();
