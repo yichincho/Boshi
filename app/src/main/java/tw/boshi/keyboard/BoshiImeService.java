@@ -160,7 +160,7 @@ public class BoshiImeService extends InputMethodService {
   handler.removeCallbacks(predictTask);
   if(secure||english||bar==null||(!manual&&!autoPredict()))return;
   final String raw=buffer.toString();final boolean composing=!raw.isEmpty();
-  if(composing&&quickPhrases.find(raw)!=null){
+  if(composing&&!quickPhrases.matches(raw).isEmpty()){
    if(manual)Toast.makeText(this,"點選 📌 片語名稱即可插入完整原文",Toast.LENGTH_SHORT).show();
    return;
   }
@@ -231,19 +231,20 @@ public class BoshiImeService extends InputMethodService {
   else bar.addView(label(english?"英文模式 · 點左下角「英」切回嘸蝦米":beforeCursor().isEmpty()?"輸入字碼開始打字":"暫無接續詞，請繼續輸入字碼"),new LinearLayout.LayoutParams(-2,-1));
   return;
  }
- QuickPhraseBook.Entry shortcut=secure||english?null:quickPhrases.find(raw);
- if(shortcut!=null)quickPhraseCandidate(shortcut);
- if(candidates.isEmpty()&&shortcut==null)bar.addView(label("未匹配字碼；空白鍵輸出英文"),new LinearLayout.LayoutParams(-2,-1));
+ List<QuickPhraseBook.Entry> shortcuts=secure||english?Collections.emptyList():quickPhrases.matches(raw);
+ for(QuickPhraseBook.Entry shortcut:shortcuts)quickPhraseCandidate(shortcut,shortcuts.size()>1);
+ if(candidates.isEmpty()&&shortcuts.isEmpty())bar.addView(label("未匹配字碼；空白鍵輸出英文"),new LinearLayout.LayoutParams(-2,-1));
  for(int i=0;i<candidates.size();i++)candidate(candidates.get(i),i==0,raw);
- if(shortcut==null&&InputRules.useAi(composedText()))schedulePredict();
+ if(shortcuts.isEmpty()&&InputRules.useAi(composedText()))schedulePredict();
  }
  private void loadQuickPhrases(){
   try{quickPhrases=new QuickPhraseStore(this).load();}
   catch(IllegalArgumentException e){quickPhrases=new QuickPhraseBook();Toast.makeText(this,e.getMessage(),Toast.LENGTH_LONG).show();}
  }
- private void quickPhraseCandidate(QuickPhraseBook.Entry entry){
-  TextView item=label("📌 "+entry.name);item.setTextSize(19);item.setTextColor(accent);
-  item.setBackground(keyDrawable(0x00000000,keyPressed));item.setContentDescription("常用字串："+entry.name+"，點選插入完整內容");
+ private void quickPhraseCandidate(QuickPhraseBook.Entry entry,boolean multiple){
+  String title=entry.name+(multiple?" · "+entry.preview(16):"");
+  TextView item=label("📌 "+title);item.setTextSize(19);item.setTextColor(accent);
+  item.setBackground(keyDrawable(0x00000000,keyPressed));item.setContentDescription("常用字串："+title+"，點選插入完整內容");
   bar.addView(item,new LinearLayout.LayoutParams(-2,-1));
   item.setOnClickListener(v->{
    cancelVoice();handler.removeCallbacks(predictTask);epoch++;
