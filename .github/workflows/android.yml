@@ -66,14 +66,22 @@ jobs:
           cp /usr/share/common-licenses/GPL-3 app/src/main/assets/rime-essay/GPL-3
           printf '%s\n' "Source: $source/essay.txt" "Modified: selected and frequency-sorted phrases, preceded by Boshi conversation seeds." > app/src/main/assets/rime-essay/SOURCE.txt
           python3 scripts/build_offline_lexicon.py /tmp/rime-essay.txt app/src/main/assets/offline_phrases.txt
+      - name: Bundle homophone table
+        run: |
+          source=https://raw.githubusercontent.com/rime/rime-terra-pinyin/723e51bc266cf9464530c1ddedb856aa18e3da34
+          curl --fail --location --retry 3 --connect-timeout 15 --max-time 120 "$source/terra_pinyin.dict.yaml" -o /tmp/terra_pinyin.dict.yaml
+          mkdir -p app/src/main/assets/terra-pinyin
+          printf '%s\n' "Source: $source/terra_pinyin.dict.yaml" "Terra Pinyin by 佛振 <chen.sst@gmail.com>, based on CC-CEDICT (MDBG), licensed CC BY-SA 3.0: https://creativecommons.org/licenses/by-sa/3.0/" "Modified: single-character readings only, readings under 5% dropped, filtered to Boshiamy-typable characters, ordered by Rime essay frequency, with Boshiamy codes added." > app/src/main/assets/terra-pinyin/SOURCE.txt
+          python3 scripts/build_homophones.py /tmp/terra_pinyin.dict.yaml /tmp/rime-essay.txt app/src/main/assets/boshiamy.tsv app/src/main/assets/homophones.tsv
       - name: Test input rules
         run: |
           mkdir -p /tmp/boshi-tests
-          javac -d /tmp/boshi-tests app/src/main/java/tw/boshi/keyboard/InputRules.java app/src/main/java/tw/boshi/keyboard/OfflineSuggestions.java tests/InputRulesTest.java tests/OfflineSuggestionsTest.java app/src/main/java/tw/boshi/keyboard/VoiceInputSession.java tests/VoiceInputSessionTest.java app/src/main/java/tw/boshi/keyboard/QuickPhraseBook.java tests/QuickPhraseBookTest.java
+          javac -d /tmp/boshi-tests app/src/main/java/tw/boshi/keyboard/InputRules.java app/src/main/java/tw/boshi/keyboard/OfflineSuggestions.java tests/InputRulesTest.java tests/OfflineSuggestionsTest.java app/src/main/java/tw/boshi/keyboard/VoiceInputSession.java tests/VoiceInputSessionTest.java app/src/main/java/tw/boshi/keyboard/QuickPhraseBook.java tests/QuickPhraseBookTest.java app/src/main/java/tw/boshi/keyboard/Homophones.java tests/HomophonesTest.java
           java -cp /tmp/boshi-tests tw.boshi.keyboard.InputRulesTest
           java -cp /tmp/boshi-tests tw.boshi.keyboard.OfflineSuggestionsTest app/src/main/assets/offline_phrases.txt
           java -cp /tmp/boshi-tests tw.boshi.keyboard.VoiceInputSessionTest
           java -cp /tmp/boshi-tests tw.boshi.keyboard.QuickPhraseBookTest
+          java -cp /tmp/boshi-tests tw.boshi.keyboard.HomophonesTest app/src/main/assets/homophones.tsv
           mkdir -p /tmp/boshi-voice-tests
           javac -d /tmp/boshi-voice-tests $(find tests/voice-stubs -name '*.java') app/src/main/java/tw/boshi/keyboard/VoiceInputSession.java app/src/main/java/tw/boshi/keyboard/VoiceInputController.java tests/VoiceInputControllerTest.java
           java -cp /tmp/boshi-voice-tests tw.boshi.keyboard.VoiceInputControllerTest
@@ -102,6 +110,7 @@ jobs:
             "Includes offline next-word candidates on fresh installs, including after 有 and 我是有." \
             "Includes a keyboard microphone button: speech becomes editable text, without an audio attachment or automatic sending." \
             "v0.9.1 fixes repeated shortcut codes: one code lists multiple independently editable phrases; existing dictionaries remain readable." \
+            "v0.10.0: English ⇧ stays locked as ⇪ until tapped again; long-press the pending code to send it as English letters; long-press any candidate for 同音字 with Boshiamy codes." \
             "" "Build source: https://github.com/${GITHUB_REPOSITORY}/commit/${GITHUB_SHA}" \
             > /tmp/boshi-release-notes.txt
           cp app/build/outputs/apk/debug/app-debug.apk Boshi-debug.apk
