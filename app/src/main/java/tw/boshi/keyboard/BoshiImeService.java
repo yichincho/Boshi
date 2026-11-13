@@ -6,6 +6,10 @@ import android.graphics.drawable.GradientDrawable;
 import android.graphics.drawable.StateListDrawable;
 import android.inputmethodservice.InputMethodService;
 import android.os.Handler;
+import android.text.SpannableString;
+import android.text.Spanned;
+import android.text.style.ForegroundColorSpan;
+import android.text.style.RelativeSizeSpan;
 import android.view.*;
 import android.view.inputmethod.*;
 import android.widget.*;
@@ -18,7 +22,7 @@ public class BoshiImeService extends InputMethodService {
  private final Handler handler=new Handler(android.os.Looper.getMainLooper());private Runnable repeat;
  private final Runnable predictTask=this::predict;private final Map<String,List<String>> predictCache=new LinkedHashMap<String,List<String>>(){protected boolean removeEldestEntry(Map.Entry<String,List<String>> e){return size()>30;}};
  private int keyBg,keyFn,keyPressed,keyText,barText,accent;private int keyHeight;
- private QuickPhraseBook quickPhrases=new QuickPhraseBook();private UserDict dict;private OfflineSuggestions offline;private TextView voiceKey;private VoiceInputController voice;private InputConnection voiceTarget;private String lastWord="";private boolean noLearn=false;
+ private QuickPhraseBook quickPhrases=new QuickPhraseBook();private UserDict dict;private OfflineSuggestions offline;private Homophones homophones=new Homophones();private TextView voiceKey;private VoiceInputController voice;private InputConnection voiceTarget;private String lastWord="";private boolean noLearn=false;
 
  private int dp(float v){return (int)(v*getResources().getDisplayMetrics().density+.5f);}
  private TextView label(String s){TextView t=new TextView(this);t.setText(s);t.setTextSize(15);t.setTextColor(barText);t.setPadding(dp(10),0,dp(10),0);t.setGravity(Gravity.CENTER_VERTICAL);return t;}
@@ -36,11 +40,17 @@ public class BoshiImeService extends InputMethodService {
   offline=new OfflineSuggestions();
   try{offline.load(new java.io.InputStreamReader(getAssets().open("offline_phrases.txt"),"UTF-8"));}
   catch(Exception e){Toast.makeText(this,"內建聯想詞庫載入失敗，請重新安裝新版 APK",Toast.LENGTH_LONG).show();}
+  homophones=new Homophones();
+  try{homophones.load(new java.io.InputStreamReader(getAssets().open("homophones.tsv"),"UTF-8"));}catch(Exception ignored){}
   dict=UserDict.get(this);try{AnalysisJob.schedule(this);}catch(Exception ignored){}
   root=new LinearLayout(this);root.setOrientation(LinearLayout.VERTICAL);root.setPadding(dp(3),0,dp(3),dp(6));
   loadTheme();
   LinearLayout top=new LinearLayout(this);top.setGravity(Gravity.CENTER_VERTICAL);root.addView(top,new LinearLayout.LayoutParams(-1,dp(48)));
   preedit=label("");preedit.setTextColor(accent);preedit.setTypeface(Typeface.MONOSPACE,Typeface.BOLD);top.addView(preedit,new LinearLayout.LayoutParams(-2,-1));
+  // Forgot to switch to English? Long-press the pending code to send those letters as typed.
+  preedit.setBackground(keyDrawable(0x00000000,keyPressed));preedit.setContentDescription("字碼，長按直接輸出英文");
+  preedit.setOnClickListener(v->Toast.makeText(this,"長按字碼可直接輸出英文",Toast.LENGTH_SHORT).show());
+  preedit.setOnLongClickListener(v->{v.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS);codeAsEnglish();return true;});
   HorizontalScrollView scroll=new HorizontalScrollView(this);scroll.setHorizontalScrollBarEnabled(false);bar=new LinearLayout(this);bar.setGravity(Gravity.CENTER_VERTICAL);scroll.addView(bar,new FrameLayout.LayoutParams(-2,-1));top.addView(scroll,new LinearLayout.LayoutParams(0,-1,1));
   voiceKey=label("🎤");voiceKey.setTextSize(23);voiceKey.setGravity(Gravity.CENTER);
   voiceKey.setTextColor(accent);voiceKey.setBackground(keyDrawable(keyFn,keyPressed));
@@ -76,7 +86,7 @@ public class BoshiImeService extends InputMethodService {
    if(r==1&&!symbols)spacer(line,0.5f);
    if(r==2){
     if(symbols)addKey(line,english?",":"，",()->symbol(english?",":"，"),1.5f,true);
-    else if(english){TextView sh=addKey(line,"⇧",()->{shift=!shift;buildKeys();},1.5f,true);if(shift)sh.setTextColor(accent);}
+    else if(english){TextView sh=addKey(line,shift?"⇪":"⇧",()->{shift=!shift;buildKeys();},1.5f,true);if(shift){sh.setTextColor(accent);sh.setTypeface(null,Typeface.BOLD);}sh.setContentDescription(shift?"大寫鎖定中，點一下改回小寫":"切換為大寫");}
     else addKey(line,"AI ✨",this::ai,1.5f,true);
    }
    for(char ch:rows[r].toCharArray()){String s=String.valueOf(ch);if(symbols)addKey(line,s,()->symbol(s),1,false);else{String shown=english&&!shift?s:s.toUpperCase(Locale.ROOT);addKey(line,shown,()->type(ch),1,false);}}
@@ -116,7 +126,7 @@ public class BoshiImeService extends InputMethodService {
  @Override public void onStartInput(EditorInfo info,boolean restarting){super.onStartInput(info,restarting);cancelVoice();int variation=info.inputType&android.text.InputType.TYPE_MASK_VARIATION;secure=variation==android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD||variation==android.text.InputType.TYPE_TEXT_VARIATION_WEB_PASSWORD||variation==android.text.InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD||variation==android.text.InputType.TYPE_NUMBER_VARIATION_PASSWORD;int cls=info.inputType&android.text.InputType.TYPE_MASK_CLASS;if(cls==android.text.InputType.TYPE_CLASS_NUMBER||cls==android.text.InputType.TYPE_CLASS_PHONE)secure=true;noLearn=(info.imeOptions&EditorInfo.IME_FLAG_NO_PERSONALIZED_LEARNING)!=0;lastWord="";handler.removeCallbacks(predictTask);buffer.setLength(0);epoch++;refresh();}
  private void type(char c){
   cancelVoice();
-  if(english){InputConnection ic=getCurrentInputConnection();if(ic!=null)ic.commitText(String.valueOf(shift?Character.toUpperCase(c):c),1);if(shift){shift=false;buildKeys();}return;}
+  if(english){InputConnection ic=getCurrentInputConnection();if(ic!=null)ic.commitText(String.valueOf(shift?Character.toUpperCase(c):c),1);return;} // ⇪ stays on until tapped again
   if(buffer.length()<48)buffer.append(c);refresh();}
 
  /** 中/英 key: English types letters straight into the field; pending Boshiamy codes are committed first. */
@@ -124,6 +134,14 @@ public class BoshiImeService extends InputMethodService {
   cancelVoice();
   if(buffer.length()>0)space();
   handler.removeCallbacks(predictTask);english=!english;shift=false;symbols=false;buildKeys();refresh();
+ }
+ /** Commit the pending Boshiamy letters literally and continue in English mode. */
+ private void codeAsEnglish(){
+  if(buffer.length()==0)return;
+  cancelVoice();handler.removeCallbacks(predictTask);
+  String raw=buffer.toString();lastWord="";
+  english=true;shift=false;symbols=false;buildKeys();
+  commit(raw);
  }
  private void back(){cancelVoice();handler.removeCallbacks(predictTask);epoch++;if(buffer.length()>0){buffer.deleteCharAt(buffer.length()-1);refresh();}else{lastWord="";if(getCurrentInputConnection()!=null)getCurrentInputConnection().deleteSurroundingText(1,0);refresh();schedulePredict();}}
  private void commit(String s){cancelVoice();InputConnection ic=getCurrentInputConnection();if(ic!=null)ic.commitText(s,1);buffer.setLength(0);epoch++;refresh();if(!s.trim().isEmpty())schedulePredict();}
@@ -224,6 +242,31 @@ public class BoshiImeService extends InputMethodService {
   TextView t=label(word);t.setTextSize(20);t.setTextColor(first?accent:keyText);if(first)t.setTypeface(null,Typeface.BOLD);
   t.setBackground(keyDrawable(0x00000000,keyPressed));t.setPadding(dp(14),0,dp(14),0);
   bar.addView(t,new LinearLayout.LayoutParams(-2,-1));t.setOnClickListener(v->commit(word));
+  t.setOnLongClickListener(v->{v.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS);showHomophones(word);return true;});
+ }
+ /** Long-press a candidate: list 同音字 of its last character with their Boshiamy codes. */
+ private void showHomophones(String word){
+  String ch=Homophones.lastChar(word);if(ch.isEmpty()||bar==null)return;
+  if(homophones.size()==0){Toast.makeText(this,"同音字表載入失敗，請重新安裝新版 APK",Toast.LENGTH_LONG).show();return;}
+  List<Homophones.Entry> list=homophones.of(ch,60);
+  if(list.isEmpty()){Toast.makeText(this,"找不到「"+ch+"」的同音字",Toast.LENGTH_SHORT).show();return;}
+  handler.removeCallbacks(predictTask);epoch++; // late AI results must not replace this list
+  String prefix=word.substring(0,word.length()-ch.length());
+  bar.removeAllViews();
+  TextView close=label("✕");close.setTextSize(18);close.setBackground(keyDrawable(0x00000000,keyPressed));close.setContentDescription("關閉同音字");
+  close.setOnClickListener(v->refresh());bar.addView(close,new LinearLayout.LayoutParams(-2,-1));
+  bar.addView(label("「"+ch+"」同音"),new LinearLayout.LayoutParams(-2,-1));
+  for(Homophones.Entry e:list){
+   SpannableString text=new SpannableString(e.text+" "+e.code);
+   text.setSpan(new RelativeSizeSpan(0.6f),e.text.length(),text.length(),Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+   text.setSpan(new ForegroundColorSpan(barText),e.text.length(),text.length(),Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+   TextView t=label("");t.setText(text);t.setTextSize(20);t.setTextColor(keyText);
+   t.setBackground(keyDrawable(0x00000000,keyPressed));t.setPadding(dp(12),0,dp(12),0);
+   t.setContentDescription(e.text+"，字碼 "+e.code);
+   String pick=prefix+e.text;
+   t.setOnClickListener(v->{learn(null,pick);commit(pick);});
+   bar.addView(t,new LinearLayout.LayoutParams(-2,-1));
+  }
  }
  private void refresh(){handler.removeCallbacks(predictTask);if(preedit==null||decoder==null)return;epoch++;String raw=buffer.toString();preedit.setText(raw);preedit.setVisibility(raw.isEmpty()?View.GONE:View.VISIBLE);candidates=decoder.decode(raw);if(dict!=null&&getSharedPreferences("config",MODE_PRIVATE).getBoolean("learn",true))candidates=dict.preferred(raw,candidates);bar.removeAllViews();if(raw.isEmpty()){
   List<String> local=localSuggestions();
